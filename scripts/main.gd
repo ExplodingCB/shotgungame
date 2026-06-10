@@ -89,6 +89,9 @@ func _ready() -> void:
 	if multiplayer.is_server():
 		_spawn_world()
 		if Net.mode == Net.Mode.LOCAL:
+			var cam := SharedCamera.new()
+			cam.name = "SharedCamera"
+			add_child(cam)
 			_add_local_players()
 		else:
 			_add_player(1)
