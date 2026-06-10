@@ -7,12 +7,23 @@ extends RigidBody2D
 # pickup can only be claimed once.
 const SPEED_CAP := 180.0
 
+# A hard-thrown gun is a weapon in itself: while it's still moving fast
+# it bonks the first ship it meets, crediting the thrower. It disarms
+# once drag slows it down (or after the hit), then it's just a pickup.
+const ARM_SPEED := 300.0
+const DISARM_SPEED := 200.0
+const ARM_GRACE := 0.15  # don't clobber the thrower's own face
+const BONK_RADIUS := 26.0
+
 @export var kind := 0
 @export var ammo := 0
 var init_velocity := Vector2.ZERO
 var init_spin := 0.0
+var thrower := 0
 
 var _collected := false
+var _armed := false
+var _arm_grace := 0.0
 var _prompt: Label
 
 @onready var sprite: Sprite2D = $Sprite2D
@@ -45,6 +56,8 @@ func _ready() -> void:
 	if multiplayer.is_server():
 		linear_velocity = init_velocity
 		angular_velocity = init_spin
+		_armed = init_velocity.length() > ARM_SPEED
+		_arm_grace = ARM_GRACE
 	else:
 		# Clients display the server's simulation via the synchronizer.
 		freeze_mode = RigidBody2D.FREEZE_MODE_KINEMATIC
@@ -79,6 +92,37 @@ func _physics_process(delta: float) -> void:
 	var speed := linear_velocity.length()
 	if speed > SPEED_CAP:
 		linear_velocity *= maxf(SPEED_CAP / speed, 1.0 - 3.0 * delta)
+	if _armed:
+		_arm_grace = maxf(_arm_grace - delta, 0.0)
+		if speed < DISARM_SPEED:
+			_armed = false
+		elif _arm_grace == 0.0:
+			_check_bonk()
+
+
+# Overlap query instead of physical contact: guns don't collide with
+# ships (grabbing would kick them away), so an armed throw checks for
+# bodies in its path itself.
+func _check_bonk() -> void:
+	if not _armed or _collected:
+		return
+	var shape := CircleShape2D.new()
+	shape.radius = BONK_RADIUS
+	var q := PhysicsShapeQueryParameters2D.new()
+	q.shape = shape
+	q.transform = Transform2D(0.0, global_position)
+	q.collision_mask = 2  # ships
+	for h in get_world_2d().direct_space_state.intersect_shape(q, 4):
+		var c: Object = h["collider"]
+		if c is Node2D and c.has_method("take_damage"):
+			var dir := linear_velocity.normalized()
+			if dir == Vector2.ZERO:
+				dir = Vector2.RIGHT
+			c.take_damage(20.0 + linear_velocity.length() * 0.03,
+					dir, global_position, thrower)
+			_armed = false
+			linear_velocity *= 0.3
+			return
 
 
 # Soft pulsing disc + ring in the weapon's rarity color, drawn behind

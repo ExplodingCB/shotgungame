@@ -1,8 +1,5 @@
 extends Node2D
 
-const BREAK_EFFECT := preload("res://scenes/asteroid_break.tscn")
-const SND_EXPLOSION := preload("res://audio/gunsounds/20 Gauge/MP3/20 Gauge Single Isolated.mp3")
-
 var velocity := Vector2.ZERO
 var damage := 10.0
 var lifetime := 0.5
@@ -63,43 +60,8 @@ func _physics_process(delta: float) -> void:
 func _explode(direct_hit: Object) -> void:
 	# Blast visuals and boom play on every peer; damage comes only from
 	# the shooter's lethal copy so hits land exactly once.
-	var fx := BREAK_EFFECT.instantiate()
-	fx.scale = Vector2.ONE * (explode_radius / 70.0)
-	fx.position = global_position
-	get_tree().current_scene.add_child(fx)
-	fx.reset_physics_interpolation()
-	_boom()
-	if deals_damage:
-		if direct_hit != null and direct_hit.has_method("take_damage"):
-			direct_hit.take_damage(damage, velocity.normalized(), global_position, shooter_id)
-		var shape := CircleShape2D.new()
-		shape.radius = explode_radius
-		var q := PhysicsShapeQueryParameters2D.new()
-		q.shape = shape
-		q.transform = Transform2D(0.0, global_position)
-		q.collision_mask = 3
-		var damaged := {}
-		for h in get_world_2d().direct_space_state.intersect_shape(q, 24):
-			var c: Object = h["collider"]
-			if c == direct_hit or damaged.has(c.get_instance_id()) \
-					or not c.has_method("take_damage") or not c is Node2D:
-				continue
-			damaged[c.get_instance_id()] = true
-			var dir := global_position.direction_to((c as Node2D).global_position)
-			if dir == Vector2.ZERO:
-				dir = Vector2.RIGHT
-			c.take_damage(explode_damage, dir, (c as Node2D).global_position, shooter_id)
+	if deals_damage and direct_hit != null and direct_hit.has_method("take_damage"):
+		direct_hit.take_damage(damage, velocity.normalized(), global_position, shooter_id)
+	Explosions.blast(self, global_position, explode_radius, explode_damage,
+			shooter_id, deals_damage, direct_hit)
 	queue_free()
-
-
-func _boom() -> void:
-	var snd := AudioStreamPlayer2D.new()
-	snd.stream = SND_EXPLOSION
-	snd.pitch_scale = 0.45 * randf_range(0.92, 1.08)
-	snd.volume_db = 2.0
-	snd.max_distance = 4000.0
-	snd.bus = "SFX"
-	snd.position = global_position
-	get_tree().current_scene.add_child(snd)
-	snd.play()
-	snd.finished.connect(snd.queue_free)

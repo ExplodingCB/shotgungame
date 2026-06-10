@@ -42,6 +42,11 @@ const START_SHELLS := 8
 const GRAB_RADIUS := 220.0
 const THROW_SPEED := 420.0
 
+# Body contact above this speed hurts the ship you hit — sawed-off and
+# rocket recoil double as a battering ram.
+const RAM_SPEED := 550.0
+const RAM_COOLDOWN := 0.5
+
 var weapon: int = Weapon.SHOTGUN
 var primary: int = Weapon.SHOTGUN  # the one big-gun slot; -1 = empty
 var ammo := {}
@@ -71,6 +76,7 @@ var input_locked := false
 var _cooldown := 0.0
 var _shake := 0.0
 var _last_health := MAX_HEALTH
+var _ram_cd := 0.0
 var _gun_rest_x := 0.0
 var _spin := 0.0
 var _shown_weapon := -1
@@ -166,10 +172,18 @@ func _authority_update(delta: float) -> void:
 	velocity = velocity.move_toward(Vector2.ZERO, DRIFT_FRICTION * delta)
 	velocity = velocity.limit_length(MAX_SPEED)
 
+	_ram_cd = maxf(_ram_cd - delta, 0.0)
 	var collision := move_and_collide(velocity * delta)
 	if collision:
 		var normal := collision.get_normal()
-		var rock := collision.get_collider() as RigidBody2D
+		var hit_body := collision.get_collider()
+		if _ram_cd == 0.0 and velocity.length() > RAM_SPEED \
+				and hit_body is Node2D and (hit_body as Node2D).is_in_group("player") \
+				and hit_body.has_method("take_damage"):
+			_ram_cd = RAM_COOLDOWN
+			hit_body.take_damage(velocity.length() * 0.025, -normal,
+					collision.get_position(), fighter_key())
+		var rock := hit_body as RigidBody2D
 		if rock != null:
 			rock.apply_central_impulse(-normal * velocity.length() * PUSH_FACTOR)
 			var lever: Vector2 = (collision.get_position() - rock.global_position).normalized()
@@ -301,7 +315,8 @@ func _net_throw(kind: int, amount: int, aim: Vector2) -> void:
 			kind, amount,
 			global_position + dir * 50.0,
 			dir * THROW_SPEED + velocity * 0.5,
-			randf_range(-2.0, 2.0))
+			randf_range(-2.0, 2.0),
+			fighter_key())
 
 
 func take_damage(amount: float, dir: Vector2, _at: Vector2, attacker_id := 0) -> void:

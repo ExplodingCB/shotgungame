@@ -21,6 +21,8 @@ var banner_color := Color(0.96, 0.96, 1.0)
 
 var _t := 0.0
 var _fight_t := 0.0
+var _banner_until := 0.0
+var _event_at := -1.0  # fight time when this round's chaos event fires
 var _dead_keys := {}
 var _zone: ShrinkZone
 
@@ -45,8 +47,11 @@ func _process(delta: float) -> void:
 				_begin_fight()
 		Phase.FIGHT:
 			_fight_t += delta
-			if _fight_t > FIGHT_BANNER_TIME and banner_text != "":
+			if _fight_t > _banner_until and banner_text != "":
 				banner_text = ""
+			if _event_at > 0.0 and _fight_t >= _event_at:
+				_event_at = -1.0
+				_fire_event(randi() % 3)
 		Phase.ROUND_END:
 			if _t <= 0.0:
 				if _best_wins() >= ROUNDS_TO_WIN:
@@ -95,9 +100,48 @@ func _begin_fight() -> void:
 	_fight_t = 0.0
 	banner_text = "FIGHT!"
 	banner_color = Color(1.0, 0.62, 0.1)
+	_banner_until = FIGHT_BANNER_TIME
+	_event_at = randf_range(12.0, 25.0)
 	_zone.start()
 	for p in _players():
 		p.input_locked = false
+
+
+# One chaos event per round, somewhere in the middle of the fight.
+func _fire_event(which: int) -> void:
+	banner_color = Color(1.0, 0.45, 0.15)
+	match which:
+		0:
+			banner_text = "ASTEROID SHOWER"
+			for i in 10:
+				var pos: Vector2 = main._edge_spawn()
+				var vel := pos.direction_to(Vector2.ZERO).rotated(randf_range(-0.5, 0.5)) \
+						* randf_range(220.0, 350.0)
+				main.asteroid_spawner.spawn([randi() % 2, pos, randf() < 0.3, vel])
+		1:
+			banner_text = "ARMS RACE"
+			for p in _players():
+				if not p.visible:
+					continue
+				var kind := _roll_high_tier()
+				p._net_receive_weapon.rpc_id(p.get_multiplayer_authority(),
+						kind, int(WeaponDB.DATA[kind]["max_ammo"]))
+		2:
+			banner_text = "SUPPLY DROP"
+			for i in 6:
+				var dir := Vector2.from_angle(i * TAU / 6.0 + randf() * 0.5)
+				var kind := WeaponDB.roll_weapon()
+				main.spawn_weapon_pickup(kind, int(WeaponDB.DATA[kind]["max_ammo"]),
+						dir * 60.0, dir * randf_range(120.0, 200.0), randf_range(-2.0, 2.0))
+	_banner_until = _fight_t + 2.2
+
+
+func _roll_high_tier() -> int:
+	var pool: Array = []
+	for id in WeaponDB.DATA:
+		if int(WeaponDB.DATA[id]["rarity"]) >= WeaponDB.Rarity.EPIC:
+			pool.append(id)
+	return pool[randi() % pool.size()]
 
 
 func _end_round(winner: Node) -> void:

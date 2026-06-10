@@ -185,6 +185,10 @@ func _spawn_asteroid(data: Variant) -> Node:
 	var rock := ASTEROID_SCENE.instantiate()
 	rock.variant = data[0]
 	rock.position = data[1]
+	if data.size() > 2:
+		rock.volatile = data[2]
+	if data.size() > 3:
+		rock.init_velocity = data[3]
 	return rock
 
 
@@ -196,9 +200,14 @@ func _spawn_world() -> void:
 	for s in PLAYER_SPAWNS:
 		placed.append({"pos": s, "r": 150.0})
 	# Largest rocks first: they're hardest to fit, smalls fill the gaps.
+	# A handful of the small/medium rocks roll volatile (they explode).
 	for variant in [3, 2, 1, 0]:
 		for i in COUNTS[variant]:
-			asteroid_spawner.spawn([variant, _find_spot(ASTEROID_RADII[variant], placed)])
+			asteroid_spawner.spawn([
+				variant,
+				_find_spot(ASTEROID_RADII[variant], placed),
+				variant <= 1 and randf() < 0.18,
+			])
 	for i in WEAPON_PICKUPS:
 		_spawn_rolled_pickup(placed)
 
@@ -215,11 +224,13 @@ func _spawn_rolled_pickup(placed: Array) -> void:
 
 
 # Players call this through the server to drop what they're holding —
-# either a deliberate throw or the swap when grabbing a new gun.
-func spawn_weapon_pickup(kind: int, ammo_amount: int, pos: Vector2, vel: Vector2, spin: float) -> void:
+# either a deliberate throw or the swap when grabbing a new gun. A fast
+# throw arrives armed: it bonks whoever it hits, credited to `thrower`.
+func spawn_weapon_pickup(kind: int, ammo_amount: int, pos: Vector2, vel: Vector2,
+		spin: float, thrower := 0) -> void:
 	if not multiplayer.is_server():
 		return
-	pickup_spawner.spawn([kind, pos, vel, spin, ammo_amount])
+	pickup_spawner.spawn([kind, pos, vel, spin, ammo_amount, thrower])
 
 
 # Positions and sizes of everything currently floating around, so
@@ -242,6 +253,8 @@ func _spawn_pickup_node(data: Variant) -> Node:
 	p.init_velocity = data[2]
 	p.init_spin = data[3]
 	p.ammo = data[4]
+	if data.size() > 5:
+		p.thrower = data[5]
 	return p
 
 
@@ -341,12 +354,15 @@ func add_shake(amount: float) -> void:
 
 
 @rpc("authority", "call_local", "reliable")
-func spawn_break_fx(pos: Vector2, fx_scale: float) -> void:
+func spawn_break_fx(pos: Vector2, fx_scale: float, with_boom := false) -> void:
 	var fx := BREAK_EFFECT.instantiate()
 	fx.scale = Vector2.ONE * fx_scale
 	fx.position = pos
 	add_child(fx)
 	fx.reset_physics_interpolation()
+	if with_boom:
+		Explosions.boom(self, pos)
+		add_shake(8.0)
 
 
 func _find_spot(radius: float, placed: Array) -> Vector2:
