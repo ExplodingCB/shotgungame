@@ -32,9 +32,11 @@ func _overkill(e: Node) -> void:
 
 
 func _pending_timers(main: Node) -> int:
+	# Wave-break timers are one-shot; ignore the repeating pickup
+	# restock timer that lives on main permanently.
 	var n := 0
 	for c in main.get_children():
-		if c is Timer:
+		if c is Timer and c.one_shot:
 			n += 1
 	return n
 

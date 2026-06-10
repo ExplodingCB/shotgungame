@@ -39,17 +39,18 @@ func _exercise() -> void:
 	for w in WeaponDB.DATA:
 		if w == WeaponDB.Weapon.PISTOL:
 			continue
-		player.give_weapon(w)
+		player.give_weapon(w, int(WeaponDB.DATA[w]["max_ammo"]))
 		player._cooldown = 0.0
 		player._fire(Vector2.RIGHT)
-	# Drain a pickup weapon to zero: it must break and hand back the shotgun.
-	player.give_weapon(3)
-	player.ammo[3] = 1
+	# Drain a weapon to zero: it stays equipped and just dry-fires.
+	player.give_weapon(WeaponDB.Weapon.SNIPER, 1)
 	player._cooldown = 0.0
 	player._fire(Vector2.RIGHT)
-	if int(player.primary) != 0 or int(player.weapon) != 0:
-		push_error("spent pickup weapon did not return the shotgun (primary=%s weapon=%s)"
-				% [player.primary, player.weapon])
+	player._cooldown = 0.0
+	player._fire(Vector2.RIGHT)  # dry click on empty
+	if int(player.primary) != WeaponDB.Weapon.SNIPER or int(player.ammo[WeaponDB.Weapon.SNIPER]) != 0:
+		push_error("spent weapon should stay equipped at 0 ammo (primary=%s ammo=%s)"
+				% [player.primary, player.ammo[WeaponDB.Weapon.SNIPER]])
 	var rocks: Array[Node] = root.get_node("Main/Asteroids").get_children()
 	if not rocks.is_empty():
 		rocks[0].take_damage(10000.0, Vector2.RIGHT, rocks[0].global_position)

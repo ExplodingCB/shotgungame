@@ -1,36 +1,69 @@
 extends RigidBody2D
 
-# kind: -1 = shotgun shells, otherwise a WeaponDB.Weapon id.
-const SHELL_TEXTURE := preload("res://assets/guns-pixelart/Amo1.png")
-const SHELLS_GIVEN := 4
+# A weapon drifting in space. kind is a WeaponDB.Weapon id; ammo is
+# whatever load it carries — a full magazine from world spawns, or the
+# remainder when a player throws one away. Players grab it with E when
+# inside their GRAB_RADIUS (see player.gd); the server arbitrates so a
+# pickup can only be claimed once.
 const SPEED_CAP := 180.0
 
-@export var kind := -1
+@export var kind := 0
+@export var ammo := 0
 var init_velocity := Vector2.ZERO
 var init_spin := 0.0
 
 var _collected := false
+var _prompt: Label
 
 @onready var sprite: Sprite2D = $Sprite2D
-@onready var area: Area2D = $Area2D
 
 
 func _ready() -> void:
-	sprite.texture = SHELL_TEXTURE if kind == -1 else WeaponDB.DATA[kind]["texture"]
-	sprite.scale = Vector2.ONE * (2.0 if kind == -1 else 0.9)
-	if kind >= 0:
-		var glow := RarityGlow.new()
-		glow.color = WeaponDB.rarity_color(kind)
-		glow.z_index = -1
-		add_child(glow)
+	add_to_group("pickups")
+	sprite.texture = WeaponDB.DATA[kind]["texture"]
+	sprite.scale = Vector2.ONE * 0.9
+
+	var glow := RarityGlow.new()
+	glow.color = WeaponDB.rarity_color(kind)
+	glow.z_index = -1
+	add_child(glow)
+
+	# Grab prompt floats above the gun; top_level so the rigid body's
+	# spin doesn't whirl the text around.
+	_prompt = Label.new()
+	_prompt.text = "E  —  %s" % WeaponDB.DATA[kind]["name"]
+	_prompt.top_level = true
+	_prompt.visible = false
+	_prompt.custom_minimum_size = Vector2(220, 0)
+	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_prompt.add_theme_font_size_override("font_size", 15)
+	_prompt.add_theme_color_override("font_color", WeaponDB.rarity_color(kind))
+	_prompt.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	_prompt.add_theme_constant_override("outline_size", 4)
+	add_child(_prompt)
+
 	if multiplayer.is_server():
 		linear_velocity = init_velocity
 		angular_velocity = init_spin
-		area.body_entered.connect(_on_body_entered)
 	else:
 		# Clients display the server's simulation via the synchronizer.
 		freeze_mode = RigidBody2D.FREEZE_MODE_KINEMATIC
 		freeze = true
+
+
+func _process(_delta: float) -> void:
+	var lp := _local_player()
+	_prompt.visible = lp != null \
+			and lp.global_position.distance_to(global_position) < lp.GRAB_RADIUS
+	if _prompt.visible:
+		_prompt.global_position = global_position + Vector2(-110.0, -72.0)
+
+
+func _local_player() -> Node2D:
+	for p in get_tree().get_nodes_in_group("player"):
+		if p.is_multiplayer_authority():
+			return p
+	return null
 
 
 func _physics_process(delta: float) -> void:
@@ -39,19 +72,6 @@ func _physics_process(delta: float) -> void:
 	var speed := linear_velocity.length()
 	if speed > SPEED_CAP:
 		linear_velocity *= maxf(SPEED_CAP / speed, 1.0 - 3.0 * delta)
-
-
-func _on_body_entered(body: Node2D) -> void:
-	if _collected or not body.is_in_group("player"):
-		return
-	_collected = true
-	var peer_id := body.get_multiplayer_authority()
-	if kind < 0:
-		body._net_give_shells.rpc_id(peer_id, SHELLS_GIVEN)
-	else:
-		body._net_give_weapon.rpc_id(peer_id, kind)
-	get_tree().current_scene.schedule_pickup_respawn(kind)
-	queue_free()
 
 
 # Soft pulsing disc + ring in the weapon's rarity color, drawn behind

@@ -4,13 +4,13 @@ const ACCENT := Color(1.0, 0.62, 0.1)
 const ALERT := Color(1.0, 0.38, 0.28)
 const TEXT_BRIGHT := Color(0.96, 0.96, 1.0)
 const TEXT_DIM := Color(0.66, 0.68, 0.76)
-const TEXT_FAINT := Color(0.46, 0.48, 0.56)
 
 var player: Node = null
 
 var _rows: Array[Dictionary] = []
 var _key1_label: Label
 var _wave_label: Label
+var _host_info_label: Label
 
 
 func _ready() -> void:
@@ -23,19 +23,28 @@ func _ready() -> void:
 
 # Top-left line the host shares with friends: UPnP progress, then the
 # public IP to join with (or port-forward instructions if UPnP failed).
+# Bound method, not a lambda: Net outlives this HUD across scene
+# changes, and a lambda connection would keep firing on a freed label.
 func _build_host_info() -> void:
-	var lbl := Label.new()
-	lbl.position = Vector2(28, 18)
-	lbl.add_theme_font_size_override("font_size", 17)
-	lbl.add_theme_color_override("font_color", TEXT_BRIGHT)
-	lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
-	lbl.add_theme_constant_override("outline_size", 5)
-	add_child(lbl)
-	var update := func():
-		lbl.text = Net.host_info
-		lbl.visible = Net.mode == Net.Mode.HOST and Net.host_info != ""
-	Net.host_info_changed.connect(update)
-	update.call()
+	_host_info_label = Label.new()
+	_host_info_label.position = Vector2(28, 18)
+	_host_info_label.add_theme_font_size_override("font_size", 17)
+	_host_info_label.add_theme_color_override("font_color", TEXT_BRIGHT)
+	_host_info_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	_host_info_label.add_theme_constant_override("outline_size", 5)
+	add_child(_host_info_label)
+	Net.host_info_changed.connect(_update_host_info)
+	_update_host_info()
+
+
+func _update_host_info() -> void:
+	_host_info_label.text = Net.host_info
+	_host_info_label.visible = Net.mode == Net.Mode.HOST and Net.host_info != ""
+
+
+func _exit_tree() -> void:
+	if Net.host_info_changed.is_connected(_update_host_info):
+		Net.host_info_changed.disconnect(_update_host_info)
 
 
 func _build_wave_label() -> void:
@@ -162,13 +171,7 @@ func _build_row(parent: Control) -> Dictionary:
 	num.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	box.add_child(num)
 
-	var max_lbl := Label.new()
-	max_lbl.add_theme_font_size_override("font_size", 16)
-	max_lbl.add_theme_color_override("font_color", TEXT_FAINT)
-	max_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	box.add_child(max_lbl)
-
-	return {"box": box, "arrow": arrow, "icon": icon, "name": name_lbl, "num": num, "max": max_lbl}
+	return {"box": box, "arrow": arrow, "icon": icon, "name": name_lbl, "num": num}
 
 
 func _update_row(row: Dictionary, w: int, active: bool) -> void:
@@ -176,7 +179,6 @@ func _update_row(row: Dictionary, w: int, active: bool) -> void:
 	var icon: TextureRect = row["icon"]
 	var name_lbl: Label = row["name"]
 	var num: Label = row["num"]
-	var max_lbl: Label = row["max"]
 	var box: HBoxContainer = row["box"]
 
 	if w < 0:
@@ -184,7 +186,6 @@ func _update_row(row: Dictionary, w: int, active: bool) -> void:
 		icon.texture = null
 		name_lbl.text = "empty"
 		num.text = ""
-		max_lbl.text = ""
 		box.modulate = Color(1, 1, 1, 0.4)
 		return
 
@@ -198,10 +199,13 @@ func _update_row(row: Dictionary, w: int, active: bool) -> void:
 	var a: int = int(player.ammo[w])
 	if a < 0:
 		num.text = "∞"
-		max_lbl.text = ""
+		num.add_theme_font_size_override("font_size", 30)
+	elif a == 0:
+		num.text = "OUT OF AMMO"
+		num.add_theme_font_size_override("font_size", 16)
 	else:
 		num.text = str(a)
-		max_lbl.text = "/ %d" % int(data["max_ammo"])
+		num.add_theme_font_size_override("font_size", 30)
 	var num_color := TEXT_BRIGHT if active else TEXT_DIM
 	if a == 0:
 		num_color = ALERT
@@ -216,7 +220,7 @@ func _build_hints() -> void:
 	hints.anchor_right = 1.0
 	hints.anchor_top = 1.0
 	hints.anchor_bottom = 1.0
-	hints.offset_left = -720.0
+	hints.offset_left = -960.0
 	hints.offset_top = -62.0
 	hints.offset_right = -28.0
 	hints.offset_bottom = -28.0
@@ -227,6 +231,8 @@ func _build_hints() -> void:
 
 	_key1_label = _add_hint(hints, ["1"], "Shotgun")
 	_add_hint(hints, ["2"], "Pistol")
+	_add_hint(hints, ["E"], "Grab")
+	_add_hint(hints, ["Q"], "Throw")
 	_add_hint(hints, ["A", "D"], "Spin", "/")
 
 

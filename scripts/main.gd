@@ -5,10 +5,11 @@ const ASTEROID_SCENE := preload("res://scenes/asteroid.tscn")
 const BREAK_EFFECT := preload("res://scenes/asteroid_break.tscn")
 const PICKUP_SCENE := preload("res://scenes/pickup.tscn")
 
-# Shell packs always spawn; weapon pickups are rolled by rarity weight.
-const SHELL_PACKS := 8
-const WEAPON_PICKUPS := 10
-const PICKUP_RESPAWN := 12.0
+# Weapon pickups are rolled by rarity weight and spawn with a full
+# magazine. The server tops the map back up to this count over time as
+# guns get carried off (thrown guns just drift, so they still count).
+const WEAPON_PICKUPS := 12
+const RESTOCK_INTERVAL := 10.0
 
 const ENEMY_SCENE := preload("res://scenes/enemy_ship.tscn")
 const FIRST_WAVE_DELAY := 5.0
@@ -81,6 +82,11 @@ func _ready() -> void:
 	if multiplayer.is_server():
 		_spawn_world()
 		_add_player(1)
+		var restock := Timer.new()
+		restock.wait_time = RESTOCK_INTERVAL
+		restock.timeout.connect(_restock_pickups)
+		add_child(restock)
+		restock.start()
 	if Net.mode == Net.Mode.SOLO:
 		_schedule_wave(FIRST_WAVE_DELAY)
 
@@ -130,19 +136,27 @@ func _spawn_world() -> void:
 	for variant in [3, 2, 1, 0]:
 		for i in COUNTS[variant]:
 			asteroid_spawner.spawn([variant, _find_spot(ASTEROID_RADII[variant], placed)])
-	for i in SHELL_PACKS:
-		_spawn_pickup(-1, placed)
 	for i in WEAPON_PICKUPS:
-		_spawn_pickup(WeaponDB.roll_weapon(), placed)
+		_spawn_rolled_pickup(placed)
 
 
-func _spawn_pickup(kind: int, placed: Array) -> void:
+func _spawn_rolled_pickup(placed: Array) -> void:
+	var kind := WeaponDB.roll_weapon()
 	pickup_spawner.spawn([
 		kind,
 		_find_spot(PICKUP_RADIUS, placed),
 		Vector2.from_angle(randf() * TAU) * randf_range(20.0, 70.0),
 		randf_range(-1.2, 1.2),
+		int(WeaponDB.DATA[kind]["max_ammo"]),
 	])
+
+
+# Players call this through the server to drop what they're holding —
+# either a deliberate throw or the swap when grabbing a new gun.
+func spawn_weapon_pickup(kind: int, ammo_amount: int, pos: Vector2, vel: Vector2, spin: float) -> void:
+	if not multiplayer.is_server():
+		return
+	pickup_spawner.spawn([kind, pos, vel, spin, ammo_amount])
 
 
 # Positions and sizes of everything currently floating around, so
@@ -164,23 +178,16 @@ func _spawn_pickup_node(data: Variant) -> Node:
 	p.position = data[1]
 	p.init_velocity = data[2]
 	p.init_spin = data[3]
+	p.ammo = data[4]
 	return p
 
 
-# Collected pickups come back somewhere else after a delay. Weapons
-# re-roll their rarity so a looted legendary doesn't keep coming back.
-func schedule_pickup_respawn(kind: int) -> void:
-	if not multiplayer.is_server():
+# Tops the arena back up to WEAPON_PICKUPS, one fresh roll per tick, as
+# guns get picked up and carried around.
+func _restock_pickups() -> void:
+	if $Pickups.get_child_count() >= WEAPON_PICKUPS:
 		return
-	var t := Timer.new()
-	t.one_shot = true
-	t.wait_time = PICKUP_RESPAWN
-	add_child(t)
-	t.timeout.connect(func():
-		_spawn_pickup(WeaponDB.roll_weapon() if kind >= 0 else -1, _live_placed())
-		t.queue_free()
-	)
-	t.start()
+	_spawn_rolled_pickup(_live_placed())
 
 
 # --- Solo wave mode -------------------------------------------------

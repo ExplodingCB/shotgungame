@@ -10,7 +10,6 @@ const SMOKE_PUFF_SCENE := preload("res://scenes/smoke_puff.tscn")
 const SND_DRY := preload("res://audio/gunsounds/Pistol/MP3/9mm Pistol Dry Fire.mp3")
 const SND_SWITCH := preload("res://audio/gunsounds/Pistol/MP3/9mm Pistol Slide Release.mp3")
 const SND_RACK := preload("res://audio/gunsounds/Reloads, Cycling & More/MP3/AK Rack MP3.mp3")
-const SND_SHELL := preload("res://audio/gunsounds/Reloads, Cycling & More/MP3/Pump Shell Load MP3.mp3")
 
 const COLORS := [
 	Color(1.0, 0.62, 0.12),  # P1 orange
@@ -36,8 +35,12 @@ const MAX_ROCK_SPIN := 5.0
 const BEAM_RANGE := 5000.0
 const BEAM_DAMAGE := 200.0
 
-const MAX_SHELLS := 24
 const START_SHELLS := 8
+
+# Weapons are grabbed with E inside this radius and thrown with Q;
+# thrown guns keep whatever ammo they had.
+const GRAB_RADIUS := 220.0
+const THROW_SPEED := 420.0
 
 var weapon: int = Weapon.SHOTGUN
 var primary: int = Weapon.SHOTGUN  # the one big-gun slot; -1 = empty
@@ -58,7 +61,6 @@ var _cooldown := 0.0
 var _shake := 0.0
 var _gun_rest_x := 0.0
 var _spin := 0.0
-var _saved_shells := START_SHELLS
 var _shown_weapon := -1
 var _suppress_switch_snd := false
 var _muzzle_y := -5.0
@@ -97,6 +99,10 @@ func _unhandled_input(event: InputEvent) -> void:
 					_switch_weapon(primary)
 			KEY_2:
 				_switch_weapon(Weapon.PISTOL)
+			KEY_E:
+				_try_pickup()
+			KEY_Q:
+				throw_weapon(global_position.direction_to(get_global_mouse_position()))
 
 
 func _physics_process(delta: float) -> void:
@@ -160,44 +166,102 @@ func _authority_update(delta: float) -> void:
 	camera.offset = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * _shake
 
 
-func add_shells(amount: int) -> bool:
-	if primary != Weapon.SHOTGUN or int(ammo[Weapon.SHOTGUN]) >= MAX_SHELLS:
-		return false
-	ammo[Weapon.SHOTGUN] = mini(int(ammo[Weapon.SHOTGUN]) + amount, MAX_SHELLS)
-	_play_fx(SND_SHELL)
-	return true
-
-
-func give_weapon(id: int) -> void:
+# Equips a weapon carrying exactly `amount` rounds — the load travels
+# with the gun, whether it came from the world or another player's hands.
+func give_weapon(id: int, amount: int) -> void:
 	if id == Weapon.PISTOL:
 		return
-	var data: Dictionary = WEAPON_DATA[id]
-	if primary == id:
-		ammo[id] = mini(int(ammo[id]) + int(data["pickup_ammo"]), int(data["max_ammo"]))
-	else:
-		if primary == Weapon.SHOTGUN:
-			_saved_shells = int(ammo[Weapon.SHOTGUN])
-		primary = id
-		ammo[id] = START_SHELLS if id == Weapon.SHOTGUN else int(data["pickup_ammo"])
+	primary = id
+	ammo[id] = amount
 	weapon = id
 	_suppress_switch_snd = true
 	_apply_weapon()
 	_play_fx(SND_RACK)
 
 
-# Pickup awards arrive from the server, which owns pickup simulation.
-@rpc("any_peer", "call_local", "reliable")
-func _net_give_shells(amount: int) -> void:
-	if not is_multiplayer_authority() or multiplayer.get_remote_sender_id() > 1:
+# Throws the primary toward `aim`; it sails off as a pickup that keeps
+# its remaining ammo. You're left with the trusty infinite pistol.
+func throw_weapon(aim: Vector2) -> void:
+	if primary < 0:
 		return
-	add_shells(amount)
+	if aim == Vector2.ZERO:
+		aim = Vector2.RIGHT
+	_net_throw.rpc_id(1, primary, int(ammo[primary]), aim)
+	ammo[primary] = 0
+	primary = -1
+	if weapon != Weapon.PISTOL:
+		_switch_weapon(Weapon.PISTOL)
+	_play_fx(SND_SWITCH)
+
+
+func _try_pickup() -> void:
+	var target := _nearest_pickup()
+	if target == null:
+		return
+	var drop_ammo := int(ammo[primary]) if primary >= 0 else 0
+	_net_request_pickup.rpc_id(1, str(target.name), primary, drop_ammo)
+
+
+func _nearest_pickup() -> Node2D:
+	var best: Node2D = null
+	var best_d := GRAB_RADIUS
+	for p in get_tree().get_nodes_in_group("pickups"):
+		var d: float = global_position.distance_to(p.global_position)
+		if d < best_d:
+			best_d = d
+			best = p
+	return best
+
+
+# Runs on the server, which owns pickup simulation: first claim wins.
+# The grabber's old gun (if any) drops in place of the new one, so a
+# grab inside the radius is really a swap.
+@rpc("any_peer", "call_local", "reliable")
+func _net_request_pickup(pickup_name: String, drop_kind: int, drop_ammo: int) -> void:
+	if not multiplayer.is_server() \
+			or multiplayer.get_remote_sender_id() != get_multiplayer_authority():
+		return
+	var holder := get_tree().current_scene.get_node_or_null("Pickups")
+	if holder == null:
+		return
+	var pickup := holder.get_node_or_null(NodePath(pickup_name))
+	if pickup == null or pickup._collected:
+		return
+	# Lenient range check: positions lag a little over the network.
+	if global_position.distance_to(pickup.global_position) > GRAB_RADIUS * 1.5:
+		return
+	pickup._collected = true
+	var got_kind: int = pickup.kind
+	var got_ammo: int = pickup.ammo
+	pickup.queue_free()
+	if drop_kind >= 0 and drop_kind != Weapon.PISTOL and WEAPON_DATA.has(drop_kind):
+		get_tree().current_scene.spawn_weapon_pickup(
+				drop_kind, drop_ammo, global_position, Vector2.ZERO, randf_range(-1.2, 1.2))
+	_net_receive_weapon.rpc_id(get_multiplayer_authority(), got_kind, got_ammo)
 
 
 @rpc("any_peer", "call_local", "reliable")
-func _net_give_weapon(id: int) -> void:
+func _net_receive_weapon(id: int, amount: int) -> void:
 	if not is_multiplayer_authority() or multiplayer.get_remote_sender_id() > 1:
 		return
-	give_weapon(id)
+	give_weapon(id, amount)
+
+
+@rpc("any_peer", "call_local", "reliable")
+func _net_throw(kind: int, amount: int, aim: Vector2) -> void:
+	if not multiplayer.is_server() \
+			or multiplayer.get_remote_sender_id() != get_multiplayer_authority():
+		return
+	if kind < 0 or kind == Weapon.PISTOL or not WEAPON_DATA.has(kind):
+		return
+	var dir := aim.normalized()
+	if dir == Vector2.ZERO:
+		dir = Vector2.RIGHT
+	get_tree().current_scene.spawn_weapon_pickup(
+			kind, amount,
+			global_position + dir * 50.0,
+			dir * THROW_SPEED + velocity * 0.5,
+			randf_range(-2.0, 2.0))
 
 
 func take_damage(amount: float, dir: Vector2, _at: Vector2) -> void:
@@ -280,13 +344,8 @@ func _fire(aim: Vector2) -> void:
 	_shake = data["shake"]
 	if data.get("spin_kick", false):
 		_spin = clampf(_spin + randf_range(-1.5, 1.5), -MAX_BODY_SPIN, MAX_BODY_SPIN)
-
-	# Pickup weapons break when spent and the trusty shotgun returns,
-	# with whatever shells it had when it was replaced.
-	if weapon != Weapon.PISTOL and weapon != Weapon.SHOTGUN and int(ammo[weapon]) == 0:
-		primary = Weapon.SHOTGUN
-		ammo[Weapon.SHOTGUN] = _saved_shells
-		_switch_weapon(Weapon.SHOTGUN)
+	# Spent weapons don't break — they stay equipped (dry-clicking) and
+	# can be thrown away or swapped at the next pickup.
 
 
 # Visuals run on every peer; only the shooter's own machine spawns
