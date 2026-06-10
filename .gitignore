@@ -4,3 +4,6 @@
 
 # Exported builds
 /builds/
+
+# Brainstorming session artifacts
+.superpowers/
