@@ -64,7 +64,7 @@ func _local_player() -> Node2D:
 	var best: Node2D = null
 	var best_d := INF
 	for p in get_tree().get_nodes_in_group("player"):
-		if not p.is_locally_controlled():
+		if not p.is_locally_controlled() or not p.visible:
 			continue
 		var d: float = p.global_position.distance_to(global_position)
 		if d < best_d:

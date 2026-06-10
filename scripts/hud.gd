@@ -17,18 +17,54 @@ var _score_key := ""
 # Couch mode: one compact panel per local player along the bottom.
 var _local_box: HBoxContainer
 var _local_rows := {}  # player node name -> row widgets
+var _round_banner: Label
 
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if Net.mode == Net.Mode.LOCAL:
 		_build_local_box()
+		_build_round_banner()
 	else:
 		_build_weapon_panel()
 	_build_hints()
 	_build_wave_label()
 	_build_host_info()
 	_build_scoreboard()
+
+
+# Big center label for round flow: countdown, FIGHT!, winner flashes.
+func _build_round_banner() -> void:
+	_round_banner = Label.new()
+	_round_banner.visible = false
+	_round_banner.anchor_left = 0.5
+	_round_banner.anchor_right = 0.5
+	_round_banner.anchor_top = 0.0
+	_round_banner.offset_left = -500.0
+	_round_banner.offset_right = 500.0
+	_round_banner.offset_top = 90.0
+	_round_banner.offset_bottom = 230.0
+	_round_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var bf := FontVariation.new()
+	bf.base_font = ThemeDB.fallback_font
+	bf.set_spacing(TextServer.SPACING_GLYPH, 8)
+	bf.variation_embolden = 0.8
+	_round_banner.add_theme_font_override("font", bf)
+	_round_banner.add_theme_font_size_override("font_size", 46)
+	_round_banner.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	_round_banner.add_theme_constant_override("outline_size", 8)
+	add_child(_round_banner)
+
+
+func _update_round_banner() -> void:
+	var main := get_tree().current_scene
+	var rm: Node = main.round_manager if main != null and "round_manager" in main else null
+	if rm == null or str(rm.banner_text) == "":
+		_round_banner.visible = false
+		return
+	_round_banner.visible = true
+	_round_banner.text = rm.banner_text
+	_round_banner.add_theme_color_override("font_color", rm.banner_color)
 
 
 # Top-left line the host shares with friends: UPnP progress, then the
@@ -79,6 +115,7 @@ func _process(_delta: float) -> void:
 	if Net.mode == Net.Mode.LOCAL:
 		# One shared camera shows everyone, so no off-screen arrows.
 		_update_local_panels()
+		_update_round_banner()
 		return
 	if player == null or not is_instance_valid(player):
 		player = _find_local_player()
@@ -185,14 +222,19 @@ func _update_scoreboard() -> void:
 	if Net.mode == Net.Mode.SOLO or players_node == null or not "scores" in main:
 		_score_box.visible = false
 		return
+	var rm: Node = main.round_manager if "round_manager" in main else null
 	var entries: Array = []
 	for p in players_node.get_children():
 		entries.append({
 			"kills": int(main.scores.get(p.fighter_key(), 0)),
+			"wins": int(rm.round_wins.get(p.fighter_key(), 0)) if rm != null else -1,
 			"color": p.COLORS[p.color_idx % p.COLORS.size()],
 			"num": int(p.color_idx) + 1,
 		})
-	entries.sort_custom(func(a, b): return a["kills"] > b["kills"])
+	entries.sort_custom(func(a, b):
+		if a["wins"] != b["wins"]:
+			return a["wins"] > b["wins"]
+		return a["kills"] > b["kills"])
 	# Rows rebuild only when something actually changed.
 	var key := str(entries)
 	if key == _score_key and _score_box.visible:
@@ -225,6 +267,14 @@ func _update_scoreboard() -> void:
 		name_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
 		name_lbl.add_theme_constant_override("outline_size", 4)
 		row.add_child(name_lbl)
+		if int(e["wins"]) >= 0:
+			var wins_lbl := Label.new()
+			wins_lbl.text = "★%d" % e["wins"]
+			wins_lbl.add_theme_font_size_override("font_size", 18)
+			wins_lbl.add_theme_color_override("font_color", ACCENT)
+			wins_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+			wins_lbl.add_theme_constant_override("outline_size", 4)
+			row.add_child(wins_lbl)
 		var kills_lbl := Label.new()
 		kills_lbl.text = str(e["kills"])
 		kills_lbl.custom_minimum_size = Vector2(34, 0)

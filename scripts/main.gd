@@ -93,6 +93,9 @@ func _ready() -> void:
 			cam.name = "SharedCamera"
 			add_child(cam)
 			_add_local_players()
+			round_manager = RoundManager.new()
+			round_manager.name = "RoundManager"
+			add_child(round_manager)
 		else:
 			_add_player(1)
 		var restock := Timer.new()
@@ -138,6 +141,11 @@ func report_death(victim_key: int, attacker_key: int) -> void:
 		_sync_scores.rpc(scores)
 	if round_manager != null:
 		round_manager.on_player_died(victim_key)
+
+
+# During an active round, deaths eliminate instead of respawning.
+func round_fight_active() -> bool:
+	return round_manager != null and round_manager.fight_active()
 
 
 @rpc("authority", "call_local", "reliable")

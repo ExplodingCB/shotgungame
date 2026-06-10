@@ -55,6 +55,11 @@ var device := -2
 var slot := 0  # stable couch identity; mirrors color_idx
 var controls: PlayerInput = PlayerInput.new(-2)
 
+# Round play: eliminated players sit out until the next countdown, and
+# everyone's trigger is locked while the countdown runs.
+var _dead := false
+var input_locked := false
+
 @onready var body_sprite: Sprite2D = $Body
 @onready var gun_pivot: Node2D = $GunPivot
 @onready var gun_sprite: Sprite2D = $GunPivot/GunSprite
@@ -109,7 +114,7 @@ func fighter_key() -> int:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not is_locally_controlled() or Net.ui_open:
+	if not is_locally_controlled() or Net.ui_open or _dead or input_locked:
 		return
 	if controls.is_toggle(event):
 		_toggle_weapon()
@@ -141,11 +146,13 @@ func _physics_process(delta: float) -> void:
 
 
 func _authority_update(delta: float) -> void:
+	if _dead:
+		return
 	var aim := controls.aim(self)
 	gun_pivot.rotation = aim.angle()
 
 	_cooldown = maxf(_cooldown - delta, 0.0)
-	if _cooldown == 0.0 and controls.fire_held() and not Net.ui_open:
+	if _cooldown == 0.0 and controls.fire_held() and not Net.ui_open and not input_locked:
 		_fire(aim)
 
 	# Space drift: only a whisper of friction, so momentum carries
@@ -313,12 +320,18 @@ func _apply_damage(amount: float, dir: Vector2, attacker_id := 0) -> void:
 		# Couch mode is single-process, so it reports directly with the
 		# victim's slot key instead of leaning on the RPC sender id.
 		var main := get_tree().current_scene
+		# Decide the fate before reporting: the report may end the round.
+		var out_for_round: bool = main != null \
+				and main.has_method("round_fight_active") and main.round_fight_active()
 		if Net.mode == Net.Mode.LOCAL:
 			if main != null and main.has_method("report_death"):
 				main.report_death(fighter_key(), attacker_id)
 		elif main != null and main.has_method("_net_report_kill"):
 			main._net_report_kill.rpc_id(1, attacker_id)
-		_respawn()
+		if out_for_round:
+			eliminate()
+		else:
+			_respawn()
 
 
 func _respawn() -> void:
@@ -327,6 +340,42 @@ func _respawn() -> void:
 	_spin = 0.0
 	position = Vector2(randf_range(-1400, 1400), randf_range(-750, 750))
 	reset_physics_interpolation()
+
+
+# Out for the round: the body stays in the tree (scoreboard, camera)
+# but vanishes from play until revive().
+func eliminate() -> void:
+	_dead = true
+	health = 0.0
+	velocity = Vector2.ZERO
+	visible = false
+	collision_layer = 0
+	collision_mask = 0
+
+
+func revive(at: Vector2) -> void:
+	_dead = false
+	health = MAX_HEALTH
+	velocity = Vector2.ZERO
+	_spin = 0.0
+	visible = true
+	collision_layer = 2
+	collision_mask = 3
+	global_position = at
+	reset_physics_interpolation()
+
+
+# Back to the starting kit between rounds: shotgun shells + the pistol.
+func reset_loadout() -> void:
+	for id in ammo:
+		ammo[id] = 0
+	ammo[Weapon.SHOTGUN] = START_SHELLS
+	ammo[Weapon.PISTOL] = -1
+	primary = Weapon.SHOTGUN
+	weapon = Weapon.SHOTGUN
+	_cooldown = 0.0
+	_suppress_switch_snd = true
+	_apply_weapon()
 
 
 func _toggle_weapon() -> void:
