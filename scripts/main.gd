@@ -50,6 +50,10 @@ var wave := 0
 var enemies_alive := 0
 var _wave_pending := false
 
+# peer_id -> kills. The server owns this and broadcasts every change;
+# clients only ever read it (the HUD scoreboard).
+var scores := {}
+
 
 func _ready() -> void:
 	player_spawner.spawn_function = _spawn_player
@@ -94,11 +98,33 @@ func _ready() -> void:
 func _on_peer_connected(id: int) -> void:
 	if multiplayer.is_server():
 		_add_player(id)
+		_sync_scores.rpc(scores)
 
 
 func _on_peer_disconnected(id: int) -> void:
-	if multiplayer.is_server() and players.has_node(str(id)):
-		players.get_node(str(id)).queue_free()
+	if multiplayer.is_server():
+		if players.has_node(str(id)):
+			players.get_node(str(id)).queue_free()
+		scores.erase(id)
+		_sync_scores.rpc(scores)
+
+
+# The dying peer reports who killed it; sender identifies the victim,
+# so a peer can never inflate its own count.
+@rpc("any_peer", "call_local", "reliable")
+func _net_report_kill(attacker_id: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var victim := multiplayer.get_remote_sender_id()
+	if attacker_id <= 0 or attacker_id == victim:
+		return  # enemy ships and suicides score nothing
+	scores[attacker_id] = int(scores.get(attacker_id, 0)) + 1
+	_sync_scores.rpc(scores)
+
+
+@rpc("authority", "call_local", "reliable")
+func _sync_scores(s: Dictionary) -> void:
+	scores = s
 
 
 func _leave() -> void:

@@ -9,6 +9,7 @@ var lifetime := 0.5
 var damping := 0.0
 var exclude: Array[RID] = []
 var deals_damage := true  # false on remote-replicated copies (visual only)
+var shooter_id := 0  # peer id credited for kills; 0 = nobody (enemies)
 
 # Explosives: detonate on impact (or fuse end) and damage everything in
 # the radius — including the shooter, so rockets double as engines.
@@ -45,7 +46,7 @@ func _physics_process(delta: float) -> void:
 			_explode(collider)
 			return
 		if deals_damage and collider != null and collider.has_method("take_damage"):
-			collider.take_damage(damage, velocity.normalized(), hit["position"])
+			collider.take_damage(damage, velocity.normalized(), hit["position"], shooter_id)
 		queue_free()
 		return
 
@@ -70,7 +71,7 @@ func _explode(direct_hit: Object) -> void:
 	_boom()
 	if deals_damage:
 		if direct_hit != null and direct_hit.has_method("take_damage"):
-			direct_hit.take_damage(damage, velocity.normalized(), global_position)
+			direct_hit.take_damage(damage, velocity.normalized(), global_position, shooter_id)
 		var shape := CircleShape2D.new()
 		shape.radius = explode_radius
 		var q := PhysicsShapeQueryParameters2D.new()
@@ -87,7 +88,7 @@ func _explode(direct_hit: Object) -> void:
 			var dir := global_position.direction_to((c as Node2D).global_position)
 			if dir == Vector2.ZERO:
 				dir = Vector2.RIGHT
-			c.take_damage(explode_damage, dir, (c as Node2D).global_position)
+			c.take_damage(explode_damage, dir, (c as Node2D).global_position, shooter_id)
 	queue_free()
 
 

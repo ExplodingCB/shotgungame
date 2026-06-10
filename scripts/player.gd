@@ -264,23 +264,28 @@ func _net_throw(kind: int, amount: int, aim: Vector2) -> void:
 			randf_range(-2.0, 2.0))
 
 
-func take_damage(amount: float, dir: Vector2, _at: Vector2) -> void:
+func take_damage(amount: float, dir: Vector2, _at: Vector2, attacker_id := 0) -> void:
 	# Runs on whichever peer's projectile landed the hit; route the
 	# actual damage to the player's owning peer.
 	if is_multiplayer_authority():
-		_apply_damage(amount, dir)
+		_apply_damage(amount, dir, attacker_id)
 	else:
-		_apply_damage.rpc_id(get_multiplayer_authority(), amount, dir)
+		_apply_damage.rpc_id(get_multiplayer_authority(), amount, dir, attacker_id)
 
 
 @rpc("any_peer", "call_remote", "reliable")
-func _apply_damage(amount: float, dir: Vector2) -> void:
+func _apply_damage(amount: float, dir: Vector2, attacker_id := 0) -> void:
 	if not is_multiplayer_authority():
 		return
 	health -= amount
 	velocity += dir * amount * HIT_KNOCKBACK
 	_shake = maxf(_shake, 5.0)
 	if health <= 0.0:
+		# The dying peer knows who landed the killing blow; the server
+		# keeps score (and ignores suicides and enemy-ship kills).
+		var main := get_tree().current_scene
+		if main != null and main.has_method("_net_report_kill"):
+			main._net_report_kill.rpc_id(1, attacker_id)
 		_respawn()
 
 
@@ -385,6 +390,7 @@ func _spawn_projectiles(aim: Vector2, data: Dictionary, lethal: bool) -> void:
 		p.bounces = int(data.get("bounces", 0))
 		p.exclude = excl
 		p.deals_damage = lethal
+		p.shooter_id = get_multiplayer_authority()
 		p.position = muzzle.global_position
 		get_tree().current_scene.add_child(p)
 		p.reset_physics_interpolation()
@@ -412,7 +418,7 @@ func _fire_beam(aim: Vector2, lethal: bool) -> void:
 		to = hit["position"]
 		var target: Object = hit["collider"]
 		if lethal and target != null and target.has_method("take_damage"):
-			target.take_damage(BEAM_DAMAGE, aim, to)
+			target.take_damage(BEAM_DAMAGE, aim, to, get_multiplayer_authority())
 
 	var beam := Line2D.new()
 	beam.points = PackedVector2Array([Vector2.ZERO, to - from])

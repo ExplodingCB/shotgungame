@@ -52,7 +52,7 @@ func _physics_process(delta: float) -> void:
 	angular_velocity = clampf(angular_velocity, -SPIN_CAP, SPIN_CAP)
 
 
-func take_damage(amount: float, dir: Vector2, at: Vector2) -> void:
+func take_damage(amount: float, dir: Vector2, at: Vector2, _attacker_id := 0) -> void:
 	_flash()
 	if multiplayer.is_server():
 		_server_damage(amount, dir, at)

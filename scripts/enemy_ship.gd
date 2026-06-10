@@ -113,7 +113,7 @@ func _shoot(dir: Vector2) -> void:
 	p.reset_physics_interpolation()
 
 
-func take_damage(amount: float, dir: Vector2, _at: Vector2) -> void:
+func take_damage(amount: float, dir: Vector2, _at: Vector2, _attacker_id := 0) -> void:
 	# The body stays in physics space until queue_free runs at end of
 	# frame, so a multi-pellet blast can land several hits on a corpse;
 	# only the killing blow may emit died.

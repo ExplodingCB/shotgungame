@@ -11,6 +11,8 @@ var _rows: Array[Dictionary] = []
 var _key1_label: Label
 var _wave_label: Label
 var _host_info_label: Label
+var _score_box: VBoxContainer
+var _score_key := ""
 
 
 func _ready() -> void:
@@ -19,6 +21,7 @@ func _ready() -> void:
 	_build_hints()
 	_build_wave_label()
 	_build_host_info()
+	_build_scoreboard()
 
 
 # Top-left line the host shares with friends: UPnP progress, then the
@@ -65,6 +68,7 @@ func _build_wave_label() -> void:
 
 
 func _process(_delta: float) -> void:
+	_update_scoreboard()
 	if player == null or not is_instance_valid(player):
 		player = _find_local_player()
 		if player == null:
@@ -77,6 +81,78 @@ func _process(_delta: float) -> void:
 		_key1_label.text = WeaponDB.DATA[prim]["name"]
 	_update_wave_label()
 	queue_redraw()
+
+
+# --- Kill scoreboard (multiplayer only), top-right ------------------
+
+func _build_scoreboard() -> void:
+	_score_box = VBoxContainer.new()
+	_score_box.anchor_left = 1.0
+	_score_box.anchor_right = 1.0
+	_score_box.offset_left = -240.0
+	_score_box.offset_right = -28.0
+	_score_box.offset_top = 16.0
+	_score_box.add_theme_constant_override("separation", 4)
+	_score_box.visible = false
+	add_child(_score_box)
+
+
+func _update_scoreboard() -> void:
+	var main := get_tree().current_scene
+	var players_node: Node = main.get_node_or_null("Players") if main != null else null
+	if Net.mode == Net.Mode.SOLO or players_node == null or not "scores" in main:
+		_score_box.visible = false
+		return
+	var entries: Array = []
+	for p in players_node.get_children():
+		entries.append({
+			"kills": int(main.scores.get(str(p.name).to_int(), 0)),
+			"color": p.COLORS[p.color_idx % p.COLORS.size()],
+			"num": int(p.color_idx) + 1,
+		})
+	entries.sort_custom(func(a, b): return a["kills"] > b["kills"])
+	# Rows rebuild only when something actually changed.
+	var key := str(entries)
+	if key == _score_key and _score_box.visible:
+		return
+	_score_key = key
+	_score_box.visible = true
+	for c in _score_box.get_children():
+		c.queue_free()
+	var title := Label.new()
+	title.text = "KILLS"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	title.add_theme_font_size_override("font_size", 14)
+	title.add_theme_color_override("font_color", TEXT_DIM)
+	title.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	title.add_theme_constant_override("outline_size", 4)
+	_score_box.add_child(title)
+	for e in entries:
+		var row := HBoxContainer.new()
+		row.alignment = BoxContainer.ALIGNMENT_END
+		row.add_theme_constant_override("separation", 10)
+		var swatch := ColorRect.new()
+		swatch.color = e["color"]
+		swatch.custom_minimum_size = Vector2(15, 15)
+		swatch.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		row.add_child(swatch)
+		var name_lbl := Label.new()
+		name_lbl.text = "P%d" % e["num"]
+		name_lbl.add_theme_font_size_override("font_size", 18)
+		name_lbl.add_theme_color_override("font_color", e["color"])
+		name_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+		name_lbl.add_theme_constant_override("outline_size", 4)
+		row.add_child(name_lbl)
+		var kills_lbl := Label.new()
+		kills_lbl.text = str(e["kills"])
+		kills_lbl.custom_minimum_size = Vector2(34, 0)
+		kills_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		kills_lbl.add_theme_font_size_override("font_size", 18)
+		kills_lbl.add_theme_color_override("font_color", TEXT_BRIGHT)
+		kills_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+		kills_lbl.add_theme_constant_override("outline_size", 4)
+		row.add_child(kills_lbl)
+		_score_box.add_child(row)
 
 
 func _update_wave_label() -> void:
