@@ -93,9 +93,6 @@ func _ready() -> void:
 			cam.name = "SharedCamera"
 			add_child(cam)
 			_add_local_players()
-			round_manager = RoundManager.new()
-			round_manager.name = "RoundManager"
-			add_child(round_manager)
 		else:
 			_add_player(1)
 		var restock := Timer.new()
@@ -105,6 +102,13 @@ func _ready() -> void:
 		restock.start()
 	if Net.mode == Net.Mode.SOLO:
 		_schedule_wave(FIRST_WAVE_DELAY)
+	else:
+		# Every versus mode runs the same match flow: warm-up lobby,
+		# then rounds. Each peer holds its own manager (same node path
+		# everywhere) so the server's phase broadcasts reach them all.
+		round_manager = RoundManager.new()
+		round_manager.name = "RoundManager"
+		add_child(round_manager)
 
 
 func _on_peer_connected(id: int) -> void:
@@ -119,6 +123,9 @@ func _on_peer_disconnected(id: int) -> void:
 			players.get_node(str(id)).queue_free()
 		scores.erase(id)
 		_sync_scores.rpc(scores)
+		# Leaving mid-fight counts as dying, so the round can resolve.
+		if round_manager != null:
+			round_manager.call_deferred("recheck_alive")
 
 
 # The dying peer reports who killed it; sender identifies the victim,

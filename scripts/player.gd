@@ -61,8 +61,10 @@ var slot := 0  # stable couch identity; mirrors color_idx
 var controls: PlayerInput = PlayerInput.new(-2)
 
 # Round play: eliminated players sit out until the next countdown, and
-# everyone's trigger is locked while the countdown runs.
+# everyone's trigger is locked while the countdown runs. _dead rides
+# the synchronizer so every peer (and late joiners) hides the corpse.
 var _dead := false
+var _shown_dead := false
 var input_locked := false
 
 @onready var body_sprite: Sprite2D = $Body
@@ -142,12 +144,15 @@ func _physics_process(delta: float) -> void:
 	if is_locally_controlled():
 		_authority_update(delta)
 	else:
-		# Remote copy: weapon and health arrive via the synchronizer;
-		# a health drop means a hit landed, so flash like the authority.
+		# Remote copy: weapon, health, and death arrive via the
+		# synchronizer; a health drop means a hit landed, so flash
+		# like the authority.
 		if weapon != _shown_weapon:
 			_apply_weapon()
 		if health < _last_health - 0.01:
 			_flash_hit()
+		if _dead != _shown_dead:
+			_apply_dead_state()
 	_last_health = health
 
 	# Shared cosmetics, derived from (possibly synced) state.
@@ -377,9 +382,7 @@ func eliminate() -> void:
 	_dead = true
 	health = 0.0
 	velocity = Vector2.ZERO
-	visible = false
-	collision_layer = 0
-	collision_mask = 0
+	_apply_dead_state()
 
 
 func revive(at: Vector2) -> void:
@@ -387,11 +390,16 @@ func revive(at: Vector2) -> void:
 	health = MAX_HEALTH
 	velocity = Vector2.ZERO
 	_spin = 0.0
-	visible = true
-	collision_layer = 2
-	collision_mask = 3
+	_apply_dead_state()
 	global_position = at
 	reset_physics_interpolation()
+
+
+func _apply_dead_state() -> void:
+	_shown_dead = _dead
+	visible = not _dead
+	collision_layer = 0 if _dead else 2
+	collision_mask = 0 if _dead else 3
 
 
 # Back to the starting kit between rounds: shotgun shells + the pistol.

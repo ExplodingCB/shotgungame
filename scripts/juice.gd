@@ -36,9 +36,10 @@ func hitstop(ms: int, scale := STOP_SCALE) -> void:
 	_apply()
 
 
+# Only round/match transitions call this, and every peer gets the same
+# broadcast, so the brief desync while clocks crawl is harmless — the
+# fight is already decided.
 func slowmo(scale := 0.3, dur := 1.0) -> void:
-	if Net.mode == Net.Mode.HOST or Net.mode == Net.Mode.JOIN:
-		return
 	_slow_until = maxi(_slow_until, Time.get_ticks_msec() + int(dur * 1000.0))
 	_slow_scale = scale
 	_apply()

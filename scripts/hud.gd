@@ -24,9 +24,10 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if Net.mode == Net.Mode.LOCAL:
 		_build_local_box()
-		_build_round_banner()
 	else:
 		_build_weapon_panel()
+	if Net.mode != Net.Mode.SOLO:
+		_build_round_banner()
 	_build_hints()
 	_build_wave_label()
 	_build_host_info()
@@ -128,6 +129,8 @@ func _process(_delta: float) -> void:
 	if prim >= 0:
 		_key1_label.text = WeaponDB.DATA[prim]["name"]
 	_update_wave_label()
+	if _round_banner != null:
+		_update_round_banner()
 	queue_redraw()
 
 
