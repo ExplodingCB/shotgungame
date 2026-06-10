@@ -108,6 +108,7 @@ func _end_round(winner: Node) -> void:
 		round_wins[key] = int(round_wins.get(key, 0)) + 1
 		banner_text = "P%d TAKES THE ROUND" % (int(winner.slot) + 1)
 		banner_color = winner.COLORS[winner.color_idx % winner.COLORS.size()]
+		Juice.slowmo(0.3, 1.0)
 	else:
 		banner_text = "NOBODY SURVIVES"
 		banner_color = Color(0.66, 0.68, 0.76)

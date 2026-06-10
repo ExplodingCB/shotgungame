@@ -316,6 +316,30 @@ func _edge_spawn() -> Vector2:
 	return Vector2(ARENA.end.x - 140.0, 0.0)
 
 
+# The dying player's peer broadcasts the blow-up so every screen sees
+# (and feels) it.
+@rpc("any_peer", "call_local", "reliable")
+func _net_player_death_fx(pos: Vector2, color_idx: int) -> void:
+	var fx := PlayerExplosion.new()
+	var colors: Array = preload("res://scripts/player.gd").COLORS
+	fx.color = colors[color_idx % colors.size()]
+	fx.position = pos
+	add_child(fx)
+	fx.reset_physics_interpolation()
+	add_shake(14.0)
+
+
+# Kicks whichever camera this machine is looking through.
+func add_shake(amount: float) -> void:
+	var cam := get_node_or_null("SharedCamera")
+	if cam != null:
+		cam.add_shake(amount)
+		return
+	for p in players.get_children():
+		if p.camera.enabled:
+			p._shake = maxf(p._shake, amount)
+
+
 @rpc("authority", "call_local", "reliable")
 func spawn_break_fx(pos: Vector2, fx_scale: float) -> void:
 	var fx := BREAK_EFFECT.instantiate()

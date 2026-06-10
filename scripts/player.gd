@@ -70,6 +70,7 @@ var input_locked := false
 
 var _cooldown := 0.0
 var _shake := 0.0
+var _last_health := MAX_HEALTH
 var _gun_rest_x := 0.0
 var _spin := 0.0
 var _shown_weapon := -1
@@ -134,9 +135,14 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	if is_locally_controlled():
 		_authority_update(delta)
-	elif weapon != _shown_weapon:
-		# Remote copy: weapon arrives via the synchronizer.
-		_apply_weapon()
+	else:
+		# Remote copy: weapon and health arrive via the synchronizer;
+		# a health drop means a hit landed, so flash like the authority.
+		if weapon != _shown_weapon:
+			_apply_weapon()
+		if health < _last_health - 0.01:
+			_flash_hit()
+	_last_health = health
 
 	# Shared cosmetics, derived from (possibly synced) state.
 	var flipped := absf(gun_pivot.rotation) > PI / 2.0
@@ -300,7 +306,9 @@ func _net_throw(kind: int, amount: int, aim: Vector2) -> void:
 
 func take_damage(amount: float, dir: Vector2, _at: Vector2, attacker_id := 0) -> void:
 	# Runs on whichever peer's projectile landed the hit; route the
-	# actual damage to the player's owning peer.
+	# actual damage to the player's owning peer. The shooter's machine
+	# is right here, so this is also where landing a hit gets its punch.
+	Juice.hit_landed(amount)
 	if is_multiplayer_authority():
 		_apply_damage(amount, dir, attacker_id)
 	else:
@@ -314,6 +322,8 @@ func _apply_damage(amount: float, dir: Vector2, attacker_id := 0) -> void:
 	health -= amount
 	velocity += dir * amount * HIT_KNOCKBACK
 	_add_shake(5.0)
+	_flash_hit()
+	Juice.rumble(device, 0.6, 0.4, 0.2)
 	if health <= 0.0:
 		# The dying peer knows who landed the killing blow; the server
 		# keeps score (and ignores suicides and enemy-ship kills).
@@ -328,6 +338,10 @@ func _apply_damage(amount: float, dir: Vector2, attacker_id := 0) -> void:
 				main.report_death(fighter_key(), attacker_id)
 		elif main != null and main.has_method("_net_report_kill"):
 			main._net_report_kill.rpc_id(1, attacker_id)
+		if main != null and main.has_method("_net_player_death_fx"):
+			main._net_player_death_fx.rpc(global_position, color_idx)
+		Juice.hitstop(150)
+		Juice.rumble(device, 1.0, 1.0, 0.45)
 		if out_for_round:
 			eliminate()
 		else:
@@ -409,6 +423,14 @@ func _apply_weapon() -> void:
 	_suppress_switch_snd = false
 
 
+# Red sting on taking a hit, settling back to the player's color.
+func _flash_hit() -> void:
+	body_sprite.modulate = Color(1.0, 0.35, 0.3)
+	var tween := create_tween()
+	tween.tween_property(body_sprite, "modulate",
+			COLORS[color_idx % COLORS.size()], 0.18)
+
+
 func _play_fx(stream: AudioStream) -> void:
 	fx_audio.stream = stream
 	fx_audio.pitch_scale = randf_range(0.95, 1.05)
@@ -428,6 +450,7 @@ func _fire(aim: Vector2) -> void:
 	_cooldown = data["cooldown"]
 	velocity += -aim * data["recoil"]
 	_add_shake(data["shake"])
+	Juice.rumble(device, 0.0, clampf(float(data["recoil"]) / 1200.0, 0.1, 0.85), 0.12)
 	if data.get("spin_kick", false):
 		_spin = clampf(_spin + randf_range(-1.5, 1.5), -MAX_BODY_SPIN, MAX_BODY_SPIN)
 	# Spent weapons don't break — they stay equipped (dry-clicking) and
