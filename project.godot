@@ -33,10 +33,11 @@ enabled=PackedStringArray("res://addons/godot_mcp/plugin.cfg")
 [physics]
 
 3d/physics_engine="Jolt Physics"
-common/physics_interpolation=true
 2d/default_linear_damp=0.0
 2d/default_angular_damp=0.0
+common/physics_interpolation=true
 
 [rendering]
 
 rendering_device/driver.windows="d3d12"
+textures/vram_compression/import_etc2_astc=true

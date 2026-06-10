@@ -1,12 +1,7 @@
 extends RigidBody2D
 
-# kind: -1 = shotgun shells, otherwise a Weapon enum index (0/2/3).
-const TEXTURES := {
-	-1: preload("res://assets/guns-pixelart/Amo1.png"),
-	0: preload("res://assets/guns-assetpack/Shotguns/MP-133.png"),
-	2: preload("res://assets/guns-assetpack/SMG's/MP5.png"),
-	3: preload("res://assets/guns-pixelart/Sniper-rifle-3.png"),
-}
+# kind: -1 = shotgun shells, otherwise a WeaponDB.Weapon id.
+const SHELL_TEXTURE := preload("res://assets/guns-pixelart/Amo1.png")
 const SHELLS_GIVEN := 4
 const SPEED_CAP := 180.0
 
@@ -21,8 +16,13 @@ var _collected := false
 
 
 func _ready() -> void:
-	sprite.texture = TEXTURES[kind]
+	sprite.texture = SHELL_TEXTURE if kind == -1 else WeaponDB.DATA[kind]["texture"]
 	sprite.scale = Vector2.ONE * (2.0 if kind == -1 else 0.9)
+	if kind >= 0:
+		var glow := RarityGlow.new()
+		glow.color = WeaponDB.rarity_color(kind)
+		glow.z_index = -1
+		add_child(glow)
 	if multiplayer.is_server():
 		linear_velocity = init_velocity
 		angular_velocity = init_spin
@@ -52,3 +52,18 @@ func _on_body_entered(body: Node2D) -> void:
 		body._net_give_weapon.rpc_id(peer_id, kind)
 	get_tree().current_scene.schedule_pickup_respawn(kind)
 	queue_free()
+
+
+# Soft pulsing disc + ring in the weapon's rarity color, drawn behind
+# the gun sprite so you can read tier at a glance from across the map.
+class RarityGlow extends Node2D:
+	var color := Color.WHITE
+	var _t := randf() * TAU
+
+	func _process(delta: float) -> void:
+		_t += delta * 3.0
+		modulate.a = 0.8 + 0.2 * sin(_t)
+
+	func _draw() -> void:
+		draw_circle(Vector2.ZERO, 34.0, Color(color, 0.16))
+		draw_arc(Vector2.ZERO, 30.0, 0.0, TAU, 48, Color(color, 0.55), 2.5)

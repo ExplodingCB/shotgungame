@@ -1,14 +1,12 @@
 extends CharacterBody2D
 
-enum Weapon { SHOTGUN, PISTOL, SMG, SNIPER }
+# Weapon stats, rarities, and ids all live in WeaponDB.
+const Weapon := WeaponDB.Weapon
+const WEAPON_DATA := WeaponDB.DATA
 
 const PROJECTILE_SCENE := preload("res://scenes/projectile.tscn")
 const SMOKE_PUFF_SCENE := preload("res://scenes/smoke_puff.tscn")
 
-const SND_SHOTGUN := preload("res://audio/gunsounds/20 Gauge/MP3/20 Gauge Single Isolated.mp3")
-const SND_PISTOL := preload("res://audio/gunsounds/9mm/MP3/9mm Single Isolated.mp3")
-const SND_SMG := preload("res://audio/gunsounds/5.56/MP3/556 Single Isolated MP3.mp3")
-const SND_SNIPER := preload("res://audio/gunsounds/7.62x54R/MP3/762x54r Single Isolated MP3.mp3")
 const SND_DRY := preload("res://audio/gunsounds/Pistol/MP3/9mm Pistol Dry Fire.mp3")
 const SND_SWITCH := preload("res://audio/gunsounds/Pistol/MP3/9mm Pistol Slide Release.mp3")
 const SND_RACK := preload("res://audio/gunsounds/Reloads, Cycling & More/MP3/AK Rack MP3.mp3")
@@ -41,101 +39,9 @@ const BEAM_DAMAGE := 200.0
 const MAX_SHELLS := 24
 const START_SHELLS := 8
 
-const WEAPON_DATA := {
-	Weapon.SHOTGUN: {
-		"texture": preload("res://assets/guns-assetpack/Shotguns/MP-133.png"),
-		"recoil": 600.0,
-		"cooldown": 0.4,
-		"shake": 9.0,
-		"kick": 10.0,
-		"sprite_x": 26.0,
-		"sprite_scale": 0.85,
-		"muzzle_x": 66.0,
-		"muzzle_y": -5.0,
-		"max_ammo": MAX_SHELLS,
-		"pickup_ammo": 4,
-		"damage": 6.0,
-		"count": 12,
-		"spread_deg": 8.0,
-		"speed_min": 900.0,
-		"speed_max": 1500.0,
-		"proj_life": 0.45,
-		"proj_damping": 1400.0,
-		"proj_color": Color(1.0, 0.92, 0.6),
-		"sound": SND_SHOTGUN,
-		"pitch": 1.0,
-	},
-	Weapon.PISTOL: {
-		"texture": preload("res://assets/guns-assetpack/Handguns/M1911.png"),
-		"recoil": 80.0,
-		"cooldown": 0.5,
-		"shake": 3.0,
-		"kick": 5.0,
-		"sprite_x": 16.0,
-		"sprite_scale": 1.1,
-		"muzzle_x": 34.0,
-		"muzzle_y": -5.0,
-		"max_ammo": -1,
-		"pickup_ammo": 0,
-		"damage": 8.0,
-		"count": 1,
-		"spread_deg": 0.0,
-		"speed_min": 650.0,
-		"speed_max": 650.0,
-		"proj_life": 0.16,
-		"proj_damping": 0.0,
-		"proj_color": Color(1.0, 0.95, 0.8),
-		"sound": SND_PISTOL,
-		"pitch": 1.0,
-	},
-	Weapon.SMG: {
-		"texture": preload("res://assets/guns-assetpack/SMG's/MP5.png"),
-		"recoil": 45.0,
-		"cooldown": 0.06,
-		"shake": 2.0,
-		"kick": 3.0,
-		"sprite_x": 22.0,
-		"sprite_scale": 0.9,
-		"muzzle_x": 49.0,
-		"muzzle_y": -7.0,
-		"max_ammo": 96,
-		"pickup_ammo": 48,
-		"damage": 4.0,
-		"count": 1,
-		"spread_deg": 2.5,
-		"speed_min": 1100.0,
-		"speed_max": 1100.0,
-		"proj_life": 0.35,
-		"proj_damping": 0.0,
-		"proj_color": Color(1.0, 0.8, 0.45),
-		"sound": SND_SMG,
-		"pitch": 1.2,
-	},
-	Weapon.SNIPER: {
-		"texture": preload("res://assets/guns-pixelart/Sniper-rifle-3.png"),
-		"recoil": 1100.0,
-		"cooldown": 1.5,
-		"shake": 16.0,
-		"kick": 14.0,
-		"sprite_x": 26.0,
-		"sprite_scale": 1.0,
-		"muzzle_x": 58.0,
-		"muzzle_y": -3.0,
-		"max_ammo": 6,
-		"pickup_ammo": 3,
-		"sound": SND_SNIPER,
-		"pitch": 0.95,
-	},
-}
-
 var weapon: int = Weapon.SHOTGUN
 var primary: int = Weapon.SHOTGUN  # the one big-gun slot; -1 = empty
-var ammo := {
-	Weapon.SHOTGUN: START_SHELLS,
-	Weapon.PISTOL: -1,  # infinite
-	Weapon.SMG: 0,
-	Weapon.SNIPER: 0,
-}
+var ammo := {}
 var color_idx := 0
 var health := MAX_HEALTH
 var max_health := MAX_HEALTH
@@ -156,6 +62,13 @@ var _saved_shells := START_SHELLS
 var _shown_weapon := -1
 var _suppress_switch_snd := false
 var _muzzle_y := -5.0
+
+
+func _init() -> void:
+	for id in WEAPON_DATA:
+		ammo[id] = 0
+	ammo[Weapon.SHOTGUN] = START_SHELLS
+	ammo[Weapon.PISTOL] = -1  # infinite
 
 
 func _enter_tree() -> void:
@@ -365,7 +278,7 @@ func _fire(aim: Vector2) -> void:
 	_cooldown = data["cooldown"]
 	velocity += -aim * data["recoil"]
 	_shake = data["shake"]
-	if weapon == Weapon.SHOTGUN:
+	if data.get("spin_kick", false):
 		_spin = clampf(_spin + randf_range(-1.5, 1.5), -MAX_BODY_SPIN, MAX_BODY_SPIN)
 
 	# Pickup weapons break when spent and the trusty shotgun returns,
@@ -382,19 +295,12 @@ func _fire(aim: Vector2) -> void:
 func _fire_fx(aim: Vector2, w: int) -> void:
 	var data: Dictionary = WEAPON_DATA[w]
 	var lethal := is_multiplayer_authority()
-	match w:
-		Weapon.SHOTGUN:
-			_spawn_projectiles(aim, data, lethal)
-			_puff_smoke(14, 1.0, aim)
-		Weapon.PISTOL:
-			_spawn_projectiles(aim, data, lethal)
-			_puff_smoke(5, 0.6, aim)
-		Weapon.SMG:
-			_spawn_projectiles(aim, data, lethal)
-			_puff_smoke(2, 0.5, aim)
-		Weapon.SNIPER:
+	match data.get("fire_mode", "pellets"):
+		"beam":
 			_fire_beam(aim, lethal)
-			_puff_smoke(20, 1.5, aim)
+		_:
+			_spawn_projectiles(aim, data, lethal)
+	_puff_smoke(int(data["smoke"]), float(data["smoke_scale"]), aim)
 	gun_sprite.position.x = _gun_rest_x - float(data["kick"])
 	var snd: AudioStream = data["sound"]
 	if shot_audio.stream != snd:
@@ -414,6 +320,10 @@ func _spawn_projectiles(aim: Vector2, data: Dictionary, lethal: bool) -> void:
 		p.lifetime = data["proj_life"]
 		p.damping = data["proj_damping"]
 		p.modulate = data["proj_color"]
+		p.scale = Vector2.ONE * float(data.get("proj_scale", 1.0))
+		p.explode_radius = float(data.get("explode_radius", 0.0))
+		p.explode_damage = float(data.get("explode_damage", 0.0))
+		p.bounces = int(data.get("bounces", 0))
 		p.exclude = excl
 		p.deals_damage = lethal
 		p.position = muzzle.global_position

@@ -1,6 +1,5 @@
 extends Control
 
-const NAMES := ["Shotgun", "Pistol", "SMG", "Sniper"]
 const ACCENT := Color(1.0, 0.62, 0.1)
 const ALERT := Color(1.0, 0.38, 0.28)
 const TEXT_BRIGHT := Color(0.96, 0.96, 1.0)
@@ -19,6 +18,24 @@ func _ready() -> void:
 	_build_weapon_panel()
 	_build_hints()
 	_build_wave_label()
+	_build_host_info()
+
+
+# Top-left line the host shares with friends: UPnP progress, then the
+# public IP to join with (or port-forward instructions if UPnP failed).
+func _build_host_info() -> void:
+	var lbl := Label.new()
+	lbl.position = Vector2(28, 18)
+	lbl.add_theme_font_size_override("font_size", 17)
+	lbl.add_theme_color_override("font_color", TEXT_BRIGHT)
+	lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	lbl.add_theme_constant_override("outline_size", 5)
+	add_child(lbl)
+	var update := func():
+		lbl.text = Net.host_info
+		lbl.visible = Net.mode == Net.Mode.HOST and Net.host_info != ""
+	Net.host_info_changed.connect(update)
+	update.call()
 
 
 func _build_wave_label() -> void:
@@ -48,7 +65,7 @@ func _process(_delta: float) -> void:
 	_update_row(_rows[0], prim, prim >= 0 and active == prim)
 	_update_row(_rows[1], 1, active == 1)
 	if prim >= 0:
-		_key1_label.text = NAMES[prim]
+		_key1_label.text = WeaponDB.DATA[prim]["name"]
 	_update_wave_label()
 	queue_redraw()
 
@@ -174,8 +191,10 @@ func _update_row(row: Dictionary, w: int, active: bool) -> void:
 	var data: Dictionary = player.WEAPON_DATA[w]
 	arrow.self_modulate.a = 1.0 if active else 0.0
 	icon.texture = data["texture"]
-	name_lbl.text = NAMES[w]
-	name_lbl.add_theme_color_override("font_color", TEXT_BRIGHT if active else TEXT_DIM)
+	name_lbl.text = data["name"]
+	# Rarity is the name's color; inactive rows just run darker.
+	var rarity_col := WeaponDB.rarity_color(w)
+	name_lbl.add_theme_color_override("font_color", rarity_col if active else rarity_col.darkened(0.35))
 	var a: int = int(player.ammo[w])
 	if a < 0:
 		num.text = "∞"
