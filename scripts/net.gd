@@ -1,6 +1,6 @@
 extends Node
 
-enum Mode { SOLO, HOST, JOIN }
+enum Mode { SOLO, HOST, JOIN, LOCAL }
 
 const PORT := 7777
 const SETTINGS_PATH := "user://settings.cfg"
@@ -9,6 +9,11 @@ signal host_info_changed
 
 var mode: int = Mode.SOLO
 var join_ip := "127.0.0.1"
+
+# Couch mode: one PlayerInput device id per joined player (-1 = KB+M).
+# Runs single-process on the default offline peer — every couch player
+# keeps authority 1, so all the server-side RPC paths work unchanged.
+var local_roster: Array = []
 var ui_open := false  # a blocking menu (pause) is up; gameplay input should ignore the mouse
 
 # Set while hosting: the address friends type in to join from outside the
@@ -79,6 +84,12 @@ func start_host() -> void:
 func start_join(ip: String) -> void:
 	mode = Mode.JOIN
 	join_ip = ip.strip_edges() if ip.strip_edges() != "" else "127.0.0.1"
+	_go()
+
+
+func start_local(roster: Array) -> void:
+	mode = Mode.LOCAL
+	local_roster = roster.duplicate()
 	_go()
 
 

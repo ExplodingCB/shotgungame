@@ -59,11 +59,18 @@ func _process(_delta: float) -> void:
 		_prompt.global_position = global_position + Vector2(-110.0, -72.0)
 
 
+# Nearest player steered from this machine — couch mode has several.
 func _local_player() -> Node2D:
+	var best: Node2D = null
+	var best_d := INF
 	for p in get_tree().get_nodes_in_group("player"):
-		if p.is_multiplayer_authority():
-			return p
-	return null
+		if not p.is_locally_controlled():
+			continue
+		var d: float = p.global_position.distance_to(global_position)
+		if d < best_d:
+			best_d = d
+			best = p
+	return best
 
 
 func _physics_process(delta: float) -> void:

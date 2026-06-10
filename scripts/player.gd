@@ -49,6 +49,12 @@ var color_idx := 0
 var health := MAX_HEALTH
 var max_health := MAX_HEALTH
 
+# Which physical device steers this body (see PlayerInput). Couch mode
+# spawns several locally-controlled players, each bound to one device.
+var device := -2
+var slot := 0  # stable couch identity; mirrors color_idx
+var controls: PlayerInput = PlayerInput.new(-2)
+
 @onready var body_sprite: Sprite2D = $Body
 @onready var gun_pivot: Node2D = $GunPivot
 @onready var gun_sprite: Sprite2D = $GunPivot/GunSprite
@@ -81,32 +87,47 @@ func _enter_tree() -> void:
 
 func _ready() -> void:
 	body_sprite.modulate = COLORS[color_idx % COLORS.size()]
-	camera.enabled = is_multiplayer_authority()
+	if device == -2 and is_multiplayer_authority() and Net.mode != Net.Mode.LOCAL:
+		device = -1  # the one player this machine steers gets KB+M
+	controls = PlayerInput.new(device)
+	# Couch mode frames everyone with one shared camera instead.
+	camera.enabled = is_multiplayer_authority() and Net.mode != Net.Mode.LOCAL
 	_apply_weapon()
 
 
+# True for bodies steered from this machine: the single authority player
+# in solo/networked games, or every couch player in LOCAL mode.
+func is_locally_controlled() -> bool:
+	return is_multiplayer_authority() and device != -2
+
+
+# Identity for scores and kill credit. Networked play keys by peer id;
+# in LOCAL mode every body shares peer 1, so slots stand in (1-based,
+# because attacker key 0 means "nobody" — enemy ships and hazards).
+func fighter_key() -> int:
+	return slot + 1 if Net.mode == Net.Mode.LOCAL else get_multiplayer_authority()
+
+
 func _unhandled_input(event: InputEvent) -> void:
-	if not is_multiplayer_authority() or Net.ui_open:
+	if not is_locally_controlled() or Net.ui_open:
 		return
-	if event is InputEventMouseButton and event.pressed:
-		if event.button_index == MOUSE_BUTTON_WHEEL_UP \
-				or event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_toggle_weapon()
-	elif event is InputEventKey and event.pressed and not event.echo:
+	if controls.is_toggle(event):
+		_toggle_weapon()
+	elif controls.is_grab(event):
+		_try_pickup()
+	elif controls.is_throw(event):
+		throw_weapon(controls.aim(self))
+	elif device == -1 and event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
 			KEY_1:
 				if primary >= 0:
 					_switch_weapon(primary)
 			KEY_2:
 				_switch_weapon(Weapon.PISTOL)
-			KEY_E:
-				_try_pickup()
-			KEY_Q:
-				throw_weapon(global_position.direction_to(get_global_mouse_position()))
 
 
 func _physics_process(delta: float) -> void:
-	if is_multiplayer_authority():
+	if is_locally_controlled():
 		_authority_update(delta)
 	elif weapon != _shown_weapon:
 		# Remote copy: weapon arrives via the synchronizer.
@@ -120,13 +141,11 @@ func _physics_process(delta: float) -> void:
 
 
 func _authority_update(delta: float) -> void:
-	var aim := global_position.direction_to(get_global_mouse_position())
-	if aim == Vector2.ZERO:
-		aim = Vector2.RIGHT
+	var aim := controls.aim(self)
 	gun_pivot.rotation = aim.angle()
 
 	_cooldown = maxf(_cooldown - delta, 0.0)
-	if _cooldown == 0.0 and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not Net.ui_open:
+	if _cooldown == 0.0 and controls.fire_held() and not Net.ui_open:
 		_fire(aim)
 
 	# Space drift: only a whisper of friction, so momentum carries
@@ -149,13 +168,9 @@ func _authority_update(delta: float) -> void:
 		velocity = velocity.bounce(normal) * WALL_BOUNCE
 		move_and_collide(collision.get_remainder().bounce(normal))
 
-	# Body rotates independently of the gun: A/D to spin, otherwise
-	# whatever the last bump or blast left you with, slowly settling.
-	var spin_input := 0.0
-	if Input.is_key_pressed(KEY_A):
-		spin_input -= 1.0
-	if Input.is_key_pressed(KEY_D):
-		spin_input += 1.0
+	# Body rotates independently of the gun: A/D (or bumpers) to spin,
+	# otherwise whatever the last bump or blast left you with, settling.
+	var spin_input := controls.spin_axis()
 	if spin_input != 0.0:
 		_spin = clampf(_spin + spin_input * SPIN_ACCEL * delta, -MAX_BODY_SPIN, MAX_BODY_SPIN)
 	else:
@@ -163,7 +178,19 @@ func _authority_update(delta: float) -> void:
 	body_sprite.rotation += _spin * delta
 
 	_shake = maxf(_shake - SHAKE_DECAY * delta, 0.0)
-	camera.offset = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * _shake
+	if camera.enabled:
+		camera.offset = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * _shake
+
+
+# Kicks this player's view: their own camera when they have one, the
+# couch-mode shared camera otherwise.
+func _add_shake(amount: float) -> void:
+	if camera.enabled:
+		_shake = maxf(_shake, amount)
+		return
+	var cam: Node = get_tree().current_scene.get_node_or_null("SharedCamera")
+	if cam != null:
+		cam.add_shake(amount)
 
 
 # Equips a weapon carrying exactly `amount` rounds — the load travels
@@ -279,12 +306,17 @@ func _apply_damage(amount: float, dir: Vector2, attacker_id := 0) -> void:
 		return
 	health -= amount
 	velocity += dir * amount * HIT_KNOCKBACK
-	_shake = maxf(_shake, 5.0)
+	_add_shake(5.0)
 	if health <= 0.0:
 		# The dying peer knows who landed the killing blow; the server
 		# keeps score (and ignores suicides and enemy-ship kills).
+		# Couch mode is single-process, so it reports directly with the
+		# victim's slot key instead of leaning on the RPC sender id.
 		var main := get_tree().current_scene
-		if main != null and main.has_method("_net_report_kill"):
+		if Net.mode == Net.Mode.LOCAL:
+			if main != null and main.has_method("report_death"):
+				main.report_death(fighter_key(), attacker_id)
+		elif main != null and main.has_method("_net_report_kill"):
 			main._net_report_kill.rpc_id(1, attacker_id)
 		_respawn()
 
@@ -346,7 +378,7 @@ func _fire(aim: Vector2) -> void:
 	_fire_fx.rpc(aim, weapon)
 	_cooldown = data["cooldown"]
 	velocity += -aim * data["recoil"]
-	_shake = data["shake"]
+	_add_shake(data["shake"])
 	if data.get("spin_kick", false):
 		_spin = clampf(_spin + randf_range(-1.5, 1.5), -MAX_BODY_SPIN, MAX_BODY_SPIN)
 	# Spent weapons don't break — they stay equipped (dry-clicking) and
@@ -390,7 +422,7 @@ func _spawn_projectiles(aim: Vector2, data: Dictionary, lethal: bool) -> void:
 		p.bounces = int(data.get("bounces", 0))
 		p.exclude = excl
 		p.deals_damage = lethal
-		p.shooter_id = get_multiplayer_authority()
+		p.shooter_id = fighter_key()
 		p.position = muzzle.global_position
 		get_tree().current_scene.add_child(p)
 		p.reset_physics_interpolation()
@@ -418,7 +450,7 @@ func _fire_beam(aim: Vector2, lethal: bool) -> void:
 		to = hit["position"]
 		var target: Object = hit["collider"]
 		if lethal and target != null and target.has_method("take_damage"):
-			target.take_damage(BEAM_DAMAGE, aim, to, get_multiplayer_authority())
+			target.take_damage(BEAM_DAMAGE, aim, to, fighter_key())
 
 	var beam := Line2D.new()
 	beam.points = PackedVector2Array([Vector2.ZERO, to - from])

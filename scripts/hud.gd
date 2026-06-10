@@ -106,7 +106,7 @@ func _update_scoreboard() -> void:
 	var entries: Array = []
 	for p in players_node.get_children():
 		entries.append({
-			"kills": int(main.scores.get(str(p.name).to_int(), 0)),
+			"kills": int(main.scores.get(p.fighter_key(), 0)),
 			"color": p.COLORS[p.color_idx % p.COLORS.size()],
 			"num": int(p.color_idx) + 1,
 		})

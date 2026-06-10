@@ -50,9 +50,12 @@ var wave := 0
 var enemies_alive := 0
 var _wave_pending := false
 
-# peer_id -> kills. The server owns this and broadcasts every change;
-# clients only ever read it (the HUD scoreboard).
+# fighter key -> kills (peer id online, slot+1 in couch mode). The
+# server owns this and broadcasts every change; clients only ever read
+# it (the HUD scoreboard).
 var scores := {}
+
+var round_manager: Node = null
 
 
 func _ready() -> void:
@@ -85,7 +88,10 @@ func _ready() -> void:
 	# Solo counts as the server; clients receive everything replicated.
 	if multiplayer.is_server():
 		_spawn_world()
-		_add_player(1)
+		if Net.mode == Net.Mode.LOCAL:
+			_add_local_players()
+		else:
+			_add_player(1)
 		var restock := Timer.new()
 		restock.wait_time = RESTOCK_INTERVAL
 		restock.timeout.connect(_restock_pickups)
@@ -115,11 +121,20 @@ func _on_peer_disconnected(id: int) -> void:
 func _net_report_kill(attacker_id: int) -> void:
 	if not multiplayer.is_server():
 		return
-	var victim := multiplayer.get_remote_sender_id()
-	if attacker_id <= 0 or attacker_id == victim:
-		return  # enemy ships and suicides score nothing
-	scores[attacker_id] = int(scores.get(attacker_id, 0)) + 1
-	_sync_scores.rpc(scores)
+	report_death(multiplayer.get_remote_sender_id(), attacker_id)
+
+
+# Server-side bookkeeping for any player death. Keys are fighter keys:
+# peer ids online, slot+1 in couch mode (couch deaths arrive as direct
+# calls — every couch player shares peer 1, so the sender id is mute).
+func report_death(victim_key: int, attacker_key: int) -> void:
+	if not multiplayer.is_server():
+		return
+	if attacker_key > 0 and attacker_key != victim_key:
+		scores[attacker_key] = int(scores.get(attacker_key, 0)) + 1
+		_sync_scores.rpc(scores)
+	if round_manager != null:
+		round_manager.on_player_died(victim_key)
 
 
 @rpc("authority", "call_local", "reliable")
@@ -136,10 +151,21 @@ func _add_player(id: int) -> void:
 	_player_count += 1
 
 
+# Couch mode: every joined device gets a player under peer 1's
+# authority. Non-numeric names keep authority at 1 (see player.gd).
+func _add_local_players() -> void:
+	for i in Net.local_roster.size():
+		player_spawner.spawn(["local_%d" % i, i, Net.local_roster[i]])
+	_player_count = Net.local_roster.size()
+
+
 func _spawn_player(data: Variant) -> Node:
 	var p := PLAYER_SCENE.instantiate()
 	p.name = str(data[0])
 	p.color_idx = data[1]
+	p.slot = data[1]
+	if data.size() > 2:
+		p.device = data[2]
 	p.position = PLAYER_SPAWNS[data[1] % PLAYER_SPAWNS.size()]
 	return p
 
