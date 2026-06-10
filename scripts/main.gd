@@ -5,8 +5,9 @@ const ASTEROID_SCENE := preload("res://scenes/asteroid.tscn")
 const BREAK_EFFECT := preload("res://scenes/asteroid_break.tscn")
 const PICKUP_SCENE := preload("res://scenes/pickup.tscn")
 
-# -1 = shell pack, others are Weapon enum ids (shotgun, smg, sniper).
-const PICKUP_SET := [-1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 2, 2, 3, 3]
+# Shell packs always spawn; weapon pickups are rolled by rarity weight.
+const SHELL_PACKS := 8
+const WEAPON_PICKUPS := 10
 const PICKUP_RESPAWN := 12.0
 
 const ENEMY_SCENE := preload("res://scenes/enemy_ship.tscn")
@@ -46,6 +47,7 @@ const PLAYER_SPAWNS := [Vector2(-600, 0), Vector2(600, 0), Vector2(0, -450), Vec
 var _player_count := 0
 var wave := 0
 var enemies_alive := 0
+var _wave_pending := false
 
 
 func _ready() -> void:
@@ -128,8 +130,10 @@ func _spawn_world() -> void:
 	for variant in [3, 2, 1, 0]:
 		for i in COUNTS[variant]:
 			asteroid_spawner.spawn([variant, _find_spot(ASTEROID_RADII[variant], placed)])
-	for kind in PICKUP_SET:
-		_spawn_pickup(kind, placed)
+	for i in SHELL_PACKS:
+		_spawn_pickup(-1, placed)
+	for i in WEAPON_PICKUPS:
+		_spawn_pickup(WeaponDB.roll_weapon(), placed)
 
 
 func _spawn_pickup(kind: int, placed: Array) -> void:
@@ -163,7 +167,8 @@ func _spawn_pickup_node(data: Variant) -> Node:
 	return p
 
 
-# Collected pickups come back somewhere else after a delay.
+# Collected pickups come back somewhere else after a delay. Weapons
+# re-roll their rarity so a looted legendary doesn't keep coming back.
 func schedule_pickup_respawn(kind: int) -> void:
 	if not multiplayer.is_server():
 		return
@@ -172,7 +177,7 @@ func schedule_pickup_respawn(kind: int) -> void:
 	t.wait_time = PICKUP_RESPAWN
 	add_child(t)
 	t.timeout.connect(func():
-		_spawn_pickup(kind, _live_placed())
+		_spawn_pickup(WeaponDB.roll_weapon() if kind >= 0 else -1, _live_placed())
 		t.queue_free()
 	)
 	t.start()
@@ -181,11 +186,15 @@ func schedule_pickup_respawn(kind: int) -> void:
 # --- Solo wave mode -------------------------------------------------
 
 func _schedule_wave(delay: float) -> void:
+	if _wave_pending:
+		return
+	_wave_pending = true
 	var t := Timer.new()
 	t.one_shot = true
 	t.wait_time = delay
 	add_child(t)
 	t.timeout.connect(func():
+		_wave_pending = false
 		_start_wave()
 		t.queue_free()
 	)

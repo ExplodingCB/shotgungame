@@ -37,6 +37,7 @@ signal died
 
 var health := 40.0
 var max_health := 40.0
+var _dead := false
 var _speed := 250.0
 var _accel := 320.0
 var _ram_cd := 0.0
@@ -113,12 +114,18 @@ func _shoot(dir: Vector2) -> void:
 
 
 func take_damage(amount: float, dir: Vector2, _at: Vector2) -> void:
+	# The body stays in physics space until queue_free runs at end of
+	# frame, so a multi-pellet blast can land several hits on a corpse;
+	# only the killing blow may emit died.
+	if _dead:
+		return
 	health -= amount
 	velocity += dir * amount * HIT_KNOCKBACK
 	sprite.modulate = Color(1.0, 0.45, 0.4)
 	var tween := create_tween()
 	tween.tween_property(sprite, "modulate", Color.WHITE, 0.15)
 	if health <= 0.0:
+		_dead = true
 		var fx := BREAK_EFFECT.instantiate()
 		fx.scale = Vector2.ONE * 0.7
 		fx.position = global_position

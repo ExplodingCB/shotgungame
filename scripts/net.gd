@@ -5,9 +5,18 @@ enum Mode { SOLO, HOST, JOIN }
 const PORT := 7777
 const SETTINGS_PATH := "user://settings.cfg"
 
+signal host_info_changed
+
 var mode: int = Mode.SOLO
 var join_ip := "127.0.0.1"
 var ui_open := false  # a blocking menu (pause) is up; gameplay input should ignore the mouse
+
+# Set while hosting: the address friends type in to join from outside the
+# LAN, plus a one-line status for the HUD while UPnP is negotiating.
+var external_ip := ""
+var host_info := ""
+
+var _upnp_thread: Thread = null
 
 var music_volume := 0.8
 var sfx_volume := 0.8
@@ -84,6 +93,7 @@ func setup_peer() -> void:
 		var peer := ENetMultiplayerPeer.new()
 		peer.create_server(PORT, 8)
 		multiplayer.multiplayer_peer = peer
+		_start_upnp()
 	elif mode == Mode.JOIN:
 		var peer := ENetMultiplayerPeer.new()
 		peer.create_client(join_ip, PORT)
@@ -94,7 +104,65 @@ func leave() -> void:
 	if multiplayer.multiplayer_peer != null:
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
+	_stop_upnp()
 	mode = Mode.SOLO
 	ui_open = false
 	get_tree().paused = false
 	get_tree().change_scene_to_file("res://scenes/menu.tscn")
+
+
+func _exit_tree() -> void:
+	_stop_upnp()
+
+
+# --- UPnP: open the host's router port so internet peers can join -----
+#
+# Discovery talks to the router and can take seconds, so it runs on a
+# thread and reports back through call_deferred.
+
+func _start_upnp() -> void:
+	host_info = "Opening internet port via UPnP…"
+	host_info_changed.emit()
+	_upnp_thread = Thread.new()
+	_upnp_thread.start(_upnp_setup)
+
+
+# Runs on _upnp_thread. Returns the UPNP instance when a mapping was
+# created (so _stop_upnp can remove it), or null when nothing to undo.
+func _upnp_setup() -> UPNP:
+	var upnp := UPNP.new()
+	var err := upnp.discover()
+	if err != UPNP.UPNP_RESULT_SUCCESS or upnp.get_gateway() == null or not upnp.get_gateway().is_valid_gateway():
+		_apply_host_info.call_deferred("",
+			"No UPnP router found — LAN play works; for internet, forward UDP port %d." % PORT)
+		return null
+	if upnp.add_port_mapping(PORT, PORT, "Shotgun Drift", "UDP", 0) != UPNP.UPNP_RESULT_SUCCESS:
+		_apply_host_info.call_deferred("",
+			"Router refused UPnP — LAN play works; for internet, forward UDP port %d." % PORT)
+		return null
+	var ip := upnp.query_external_address()
+	if ip == "":
+		_apply_host_info.call_deferred("",
+			"Port %d is open, but couldn't read your public IP — look it up and share it." % PORT)
+	else:
+		_apply_host_info.call_deferred(ip, "Friends join with IP: %s" % ip)
+	return upnp
+
+
+func _apply_host_info(ip: String, info: String) -> void:
+	if mode != Mode.HOST:
+		return  # left the game before discovery finished
+	external_ip = ip
+	host_info = info
+	host_info_changed.emit()
+
+
+func _stop_upnp() -> void:
+	if _upnp_thread == null:
+		return
+	var upnp: UPNP = _upnp_thread.wait_to_finish()
+	_upnp_thread = null
+	if upnp != null:
+		upnp.delete_port_mapping(PORT, "UDP")
+	external_ip = ""
+	host_info = ""

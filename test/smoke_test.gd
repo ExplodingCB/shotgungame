@@ -19,7 +19,8 @@ func _process(_delta: float) -> bool:
 	if _frames == 5 and not _ran:
 		_ran = true
 		_exercise()
-	if _frames >= 90:
+	# Long enough for grenade/rocket fuses (2.5s) to detonate.
+	if _frames >= 240:
 		print("SMOKE TEST OK")
 		quit(0)
 	return false
@@ -31,10 +32,13 @@ func _exercise() -> void:
 		push_error("no player spawned")
 		quit(1)
 		return
-	# Pistol, then each primary via the pickup path.
-	player._switch_weapon(1)
+	# Pistol, then every primary in the database via the pickup path
+	# (covers pellets, beams, and explosive/bouncing rounds).
+	player._switch_weapon(WeaponDB.Weapon.PISTOL)
 	player._fire(Vector2.RIGHT)
-	for w in [0, 2, 3]:
+	for w in WeaponDB.DATA:
+		if w == WeaponDB.Weapon.PISTOL:
+			continue
 		player.give_weapon(w)
 		player._cooldown = 0.0
 		player._fire(Vector2.RIGHT)
