@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://qstfo1wmrrd2"
+path="res://.godot/imported/20 Gauge Spray Isolated.mp3-46c7b544b2102ddc6e3c707470c1efe3.mp3str"
+
+[deps]
+
+source_file="res://audio/gunsounds/20 Gauge/MP3/20 Gauge Spray Isolated.mp3"
+dest_files=["res://.godot/imported/20 Gauge Spray Isolated.mp3-46c7b544b2102ddc6e3c707470c1efe3.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

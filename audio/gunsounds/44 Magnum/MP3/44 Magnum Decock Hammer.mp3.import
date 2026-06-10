@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://cu8dcr2dxgn8y"
+path="res://.godot/imported/44 Magnum Decock Hammer.mp3-6e2c35861a99e3a2977d73f39b7aa9e3.mp3str"
+
+[deps]
+
+source_file="res://audio/gunsounds/44 Magnum/MP3/44 Magnum Decock Hammer.mp3"
+dest_files=["res://.godot/imported/44 Magnum Decock Hammer.mp3-6e2c35861a99e3a2977d73f39b7aa9e3.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bnraky2t3q61i"
+path="res://.godot/imported/44 Magnum Eject Full and Empty Part 2.mp3-ac93a78094b4f6942dae2a45c8d19a94.mp3str"
+
+[deps]
+
+source_file="res://audio/gunsounds/44 Magnum/MP3/44 Magnum Eject Full and Empty Part 2.mp3"
+dest_files=["res://.godot/imported/44 Magnum Eject Full and Empty Part 2.mp3-ac93a78094b4f6942dae2a45c8d19a94.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

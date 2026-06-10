@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bg858mcayf6si"
+path="res://.godot/imported/32 SW Close Cylinder.mp3-73b52d9f571e56d029f3e48cd77bbfab.mp3str"
+
+[deps]
+
+source_file="res://audio/gunsounds/32 SW Long/MP3/32 SW Close Cylinder.mp3"
+dest_files=["res://.godot/imported/32 SW Close Cylinder.mp3-73b52d9f571e56d029f3e48cd77bbfab.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

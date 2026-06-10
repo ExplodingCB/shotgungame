@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://dckjumsa7kn33"
+path="res://.godot/imported/9mm Pistol Chamber Check Part 1.mp3-de70a8c950e49c7d9dbae6efbe5fea9c.mp3str"
+
+[deps]
+
+source_file="res://audio/gunsounds/Pistol/MP3/9mm Pistol Chamber Check Part 1.mp3"
+dest_files=["res://.godot/imported/9mm Pistol Chamber Check Part 1.mp3-de70a8c950e49c7d9dbae6efbe5fea9c.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

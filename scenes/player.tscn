@@ -1,0 +1,110 @@
+[gd_scene load_steps=11 format=3]
+
+[ext_resource type="Script" path="res://scripts/player.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://assets/guns-assetpack/Shotguns/MP-133.png" id="2_gun"]
+[ext_resource type="Script" path="res://scripts/health_bar.gd" id="3_health"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_body"]
+radius = 22.0
+
+[sub_resource type="Gradient" id="Gradient_body"]
+offsets = PackedFloat32Array(0, 0.55, 0.8, 0.92, 1)
+colors = PackedColorArray(1, 1, 1, 1, 0.92, 0.92, 0.92, 1, 0.78, 0.78, 0.78, 1, 0.52, 0.52, 0.52, 1, 0.52, 0.52, 0.52, 0)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_body"]
+gradient = SubResource("Gradient_body")
+width = 96
+height = 96
+fill = 1
+fill_from = Vector2(0.5, 0.5)
+fill_to = Vector2(0.5, 0)
+
+[sub_resource type="Gradient" id="Gradient_dot"]
+offsets = PackedFloat32Array(0, 0.45, 1)
+colors = PackedColorArray(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_dot"]
+gradient = SubResource("Gradient_dot")
+width = 8
+height = 8
+fill = 1
+fill_from = Vector2(0.5, 0.5)
+fill_to = Vector2(0.5, 0)
+
+[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_player"]
+properties/0/path = NodePath(".:position")
+properties/0/spawn = true
+properties/0/replication_mode = 1
+properties/1/path = NodePath("GunPivot:rotation")
+properties/1/spawn = true
+properties/1/replication_mode = 1
+properties/2/path = NodePath("Body:rotation")
+properties/2/spawn = true
+properties/2/replication_mode = 1
+properties/3/path = NodePath(".:health")
+properties/3/spawn = true
+properties/3/replication_mode = 2
+properties/4/path = NodePath(".:weapon")
+properties/4/spawn = true
+properties/4/replication_mode = 2
+
+[node name="Player" type="CharacterBody2D" groups=["player"]]
+collision_layer = 2
+collision_mask = 3
+motion_mode = 1
+script = ExtResource("1_script")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape2D_body")
+
+[node name="Body" type="Sprite2D" parent="."]
+scale = Vector2(0.5, 0.5)
+texture = SubResource("GradientTexture2D_body")
+
+[node name="Spot1" type="Sprite2D" parent="Body"]
+modulate = Color(0.3, 0.3, 0.3, 1)
+position = Vector2(22, -12)
+scale = Vector2(1.8, 1.8)
+texture = SubResource("GradientTexture2D_dot")
+
+[node name="Spot2" type="Sprite2D" parent="Body"]
+modulate = Color(0.35, 0.35, 0.35, 1)
+position = Vector2(-10, 24)
+scale = Vector2(1.2, 1.2)
+texture = SubResource("GradientTexture2D_dot")
+
+[node name="GunPivot" type="Node2D" parent="."]
+
+[node name="GunSprite" type="Sprite2D" parent="GunPivot"]
+texture_filter = 1
+position = Vector2(24, 0)
+texture = ExtResource("2_gun")
+
+[node name="Muzzle" type="Marker2D" parent="GunPivot"]
+position = Vector2(54, -3)
+
+[node name="HealthBar" type="Node2D" parent="."]
+script = ExtResource("3_health")
+
+[node name="ShotAudio" type="AudioStreamPlayer2D" parent="."]
+volume_db = -8.0
+max_polyphony = 8
+max_distance = 2500.0
+bus = &"SFX"
+
+[node name="FxAudio" type="AudioStreamPlayer2D" parent="."]
+volume_db = -6.0
+max_polyphony = 3
+max_distance = 2500.0
+bus = &"SFX"
+
+[node name="Sync" type="MultiplayerSynchronizer" parent="."]
+replication_config = SubResource("SceneReplicationConfig_player")
+
+[node name="Camera2D" type="Camera2D" parent="."]
+limit_left = -1624
+limit_top = -924
+limit_right = 1624
+limit_bottom = 924
+position_smoothing_enabled = true
+position_smoothing_speed = 8.0

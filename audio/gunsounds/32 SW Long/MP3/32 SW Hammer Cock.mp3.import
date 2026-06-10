@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://2wnxuuy74xwl"
+path="res://.godot/imported/32 SW Hammer Cock.mp3-e854a8af0120083d28d12acf3a99da19.mp3str"
+
+[deps]
+
+source_file="res://audio/gunsounds/32 SW Long/MP3/32 SW Hammer Cock.mp3"
+dest_files=["res://.godot/imported/32 SW Hammer Cock.mp3-e854a8af0120083d28d12acf3a99da19.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

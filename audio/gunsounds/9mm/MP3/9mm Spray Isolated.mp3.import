@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://chqbwtg2us7dl"
+path="res://.godot/imported/9mm Spray Isolated.mp3-d2b736a11a12744da77692a9b44bbb78.mp3str"
+
+[deps]
+
+source_file="res://audio/gunsounds/9mm/MP3/9mm Spray Isolated.mp3"
+dest_files=["res://.godot/imported/9mm Spray Isolated.mp3-d2b736a11a12744da77692a9b44bbb78.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

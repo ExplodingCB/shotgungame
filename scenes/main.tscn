@@ -1,0 +1,96 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="0_main"]
+[ext_resource type="Script" path="res://scripts/backdrop.gd" id="1_backdrop"]
+[ext_resource type="Script" path="res://scripts/hud.gd" id="4_hud"]
+[ext_resource type="Script" path="res://scripts/pause_menu.gd" id="6_pause"]
+
+[sub_resource type="CanvasItemMaterial" id="CanvasItemMaterial_add"]
+blend_mode = 1
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_h"]
+size = Vector2(3296, 24)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_v"]
+size = Vector2(24, 1848)
+
+[node name="Main" type="Node2D"]
+script = ExtResource("0_main")
+
+[node name="StarsFar" type="Parallax2D" parent="."]
+scroll_scale = Vector2(0.25, 0.25)
+
+[node name="Sprite" type="Sprite2D" parent="StarsFar"]
+self_modulate = Color(0.55, 0.55, 0.65, 1)
+texture_repeat = 2
+region_enabled = true
+region_rect = Rect2(-3500, -2300, 7000, 4600)
+
+[node name="StarsNear" type="Parallax2D" parent="."]
+scroll_scale = Vector2(0.5, 0.5)
+
+[node name="Sprite" type="Sprite2D" parent="StarsNear"]
+material = SubResource("CanvasItemMaterial_add")
+texture_repeat = 2
+region_enabled = true
+region_rect = Rect2(-3500, -2300, 7000, 4600)
+
+[node name="Backdrop" type="Node2D" parent="."]
+script = ExtResource("1_backdrop")
+
+[node name="Walls" type="StaticBody2D" parent="."]
+
+[node name="Top" type="CollisionShape2D" parent="Walls"]
+position = Vector2(0, -912)
+shape = SubResource("RectangleShape2D_h")
+
+[node name="Bottom" type="CollisionShape2D" parent="Walls"]
+position = Vector2(0, 912)
+shape = SubResource("RectangleShape2D_h")
+
+[node name="Left" type="CollisionShape2D" parent="Walls"]
+position = Vector2(-1612, 0)
+shape = SubResource("RectangleShape2D_v")
+
+[node name="Right" type="CollisionShape2D" parent="Walls"]
+position = Vector2(1612, 0)
+shape = SubResource("RectangleShape2D_v")
+
+[node name="Asteroids" type="Node2D" parent="."]
+
+[node name="Players" type="Node2D" parent="."]
+
+[node name="PlayerSpawner" type="MultiplayerSpawner" parent="."]
+_spawnable_scenes = PackedStringArray("res://scenes/player.tscn")
+spawn_path = NodePath("../Players")
+
+[node name="AsteroidSpawner" type="MultiplayerSpawner" parent="."]
+_spawnable_scenes = PackedStringArray("res://scenes/asteroid.tscn")
+spawn_path = NodePath("../Asteroids")
+
+[node name="Enemies" type="Node2D" parent="."]
+
+[node name="Pickups" type="Node2D" parent="."]
+
+[node name="PickupSpawner" type="MultiplayerSpawner" parent="."]
+_spawnable_scenes = PackedStringArray("res://scenes/pickup.tscn")
+spawn_path = NodePath("../Pickups")
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="Hud" type="Control" parent="HUD"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("4_hud")
+
+[node name="PauseMenu" type="Control" parent="HUD"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("6_pause")

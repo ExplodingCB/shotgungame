@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://ywltel4ut7gt"
+path="res://.godot/imported/20 Gauge Burst Isolated.mp3-7687c1705f8bfcfc8d272b567f111b15.mp3str"
+
+[deps]
+
+source_file="res://audio/gunsounds/20 Gauge/MP3/20 Gauge Burst Isolated.mp3"
+dest_files=["res://.godot/imported/20 Gauge Burst Isolated.mp3-7687c1705f8bfcfc8d272b567f111b15.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

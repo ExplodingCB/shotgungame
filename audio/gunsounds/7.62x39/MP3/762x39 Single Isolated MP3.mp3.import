@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://dftsxg141nbdc"
+path="res://.godot/imported/762x39 Single Isolated MP3.mp3-cc92a02fa6ea870444eefd7bddf66079.mp3str"
+
+[deps]
+
+source_file="res://audio/gunsounds/7.62x39/MP3/762x39 Single Isolated MP3.mp3"
+dest_files=["res://.godot/imported/762x39 Single Isolated MP3.mp3-cc92a02fa6ea870444eefd7bddf66079.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://b04dowarrsnyr"
+path="res://.godot/imported/9mm Double Tap Isolated.mp3-8165073310e03f3af19b26dd07b2b718.mp3str"
+
+[deps]
+
+source_file="res://audio/gunsounds/9mm/MP3/9mm Double Tap Isolated.mp3"
+dest_files=["res://.godot/imported/9mm Double Tap Isolated.mp3-8165073310e03f3af19b26dd07b2b718.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

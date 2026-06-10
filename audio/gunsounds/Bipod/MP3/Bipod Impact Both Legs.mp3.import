@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://crl7k5way7oha"
+path="res://.godot/imported/Bipod Impact Both Legs.mp3-479e484ae9495ba8b5879cd18934247a.mp3str"
+
+[deps]
+
+source_file="res://audio/gunsounds/Bipod/MP3/Bipod Impact Both Legs.mp3"
+dest_files=["res://.godot/imported/Bipod Impact Both Legs.mp3-479e484ae9495ba8b5879cd18934247a.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

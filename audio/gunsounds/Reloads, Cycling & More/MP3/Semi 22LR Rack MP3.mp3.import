@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://cyye7ntruc13h"
+path="res://.godot/imported/Semi 22LR Rack MP3.mp3-e7d113cf6defd221432d811d53bd1d7b.mp3str"
+
+[deps]
+
+source_file="res://audio/gunsounds/Reloads, Cycling & More/MP3/Semi 22LR Rack MP3.mp3"
+dest_files=["res://.godot/imported/Semi 22LR Rack MP3.mp3-e7d113cf6defd221432d811d53bd1d7b.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://c3y546f7mycqf"
+path="res://.godot/imported/44 Magnum Eject Part 1.mp3-ffc8c2ac11f989b0c304c055d9443709.mp3str"
+
+[deps]
+
+source_file="res://audio/gunsounds/44 Magnum/MP3/44 Magnum Eject Part 1.mp3"
+dest_files=["res://.godot/imported/44 Magnum Eject Part 1.mp3-ffc8c2ac11f989b0c304c055d9443709.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

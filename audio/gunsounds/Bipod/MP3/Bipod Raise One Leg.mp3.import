@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://d4j4l6lkxf1qx"
+path="res://.godot/imported/Bipod Raise One Leg.mp3-99f65302d0010880f4aa02a0b422e97e.mp3str"
+
+[deps]
+
+source_file="res://audio/gunsounds/Bipod/MP3/Bipod Raise One Leg.mp3"
+dest_files=["res://.godot/imported/Bipod Raise One Leg.mp3-99f65302d0010880f4aa02a0b422e97e.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

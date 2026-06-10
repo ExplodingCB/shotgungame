@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://ceh1qrifcqi6s"
+path="res://.godot/imported/AR PolyMag Unpack.mp3-0932c7417e4c93c246e651a04cec4881.mp3str"
+
+[deps]
+
+source_file="res://audio/gunsounds/Mag Pack/MP3/AR PolyMag Unpack.mp3"
+dest_files=["res://.godot/imported/AR PolyMag Unpack.mp3-0932c7417e4c93c246e651a04cec4881.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://dwsy1qasv57dm"
+path="res://.godot/imported/9mm Pistol Rack Full.mp3-0e211a33e5e4f4d902f69f9924e30e30.mp3str"
+
+[deps]
+
+source_file="res://audio/gunsounds/Pistol/MP3/9mm Pistol Rack Full.mp3"
+dest_files=["res://.godot/imported/9mm Pistol Rack Full.mp3-0e211a33e5e4f4d902f69f9924e30e30.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

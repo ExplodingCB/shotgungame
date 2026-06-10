@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://dyx3p8mk7450i"
+path="res://.godot/imported/32 SW Eject One Casing.mp3-7a1ec3c117ff98174d10c6a149579261.mp3str"
+
+[deps]
+
+source_file="res://audio/gunsounds/32 SW Long/MP3/32 SW Eject One Casing.mp3"
+dest_files=["res://.godot/imported/32 SW Eject One Casing.mp3-7a1ec3c117ff98174d10c6a149579261.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

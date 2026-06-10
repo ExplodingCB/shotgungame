@@ -1,0 +1,272 @@
+extends Node2D
+
+const PLAYER_SCENE := preload("res://scenes/player.tscn")
+const ASTEROID_SCENE := preload("res://scenes/asteroid.tscn")
+const BREAK_EFFECT := preload("res://scenes/asteroid_break.tscn")
+const PICKUP_SCENE := preload("res://scenes/pickup.tscn")
+
+# -1 = shell pack, others are Weapon enum ids (shotgun, smg, sniper).
+const PICKUP_SET := [-1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 2, 2, 3, 3]
+const PICKUP_RESPAWN := 12.0
+
+const ENEMY_SCENE := preload("res://scenes/enemy_ship.tscn")
+const FIRST_WAVE_DELAY := 5.0
+const WAVE_BREAK := 5.0
+
+const MUSIC := preload("res://audio/music/game_music.mp3")
+
+const STARFIELDS: Array[Texture2D] = [
+	preload("res://assets/space-backgrounds/Starfields/Starfield_01-1024x1024.png"),
+	preload("res://assets/space-backgrounds/Starfields/Starfield_02-1024x1024.png"),
+	preload("res://assets/space-backgrounds/Starfields/Starfield_03-1024x1024.png"),
+	preload("res://assets/space-backgrounds/Starfields/Starfield_04-1024x1024.png"),
+	preload("res://assets/space-backgrounds/Starfields/Starfield_05-1024x1024.png"),
+	preload("res://assets/space-backgrounds/Starfields/Starfield_06-1024x1024.png"),
+	preload("res://assets/space-backgrounds/Starfields/Starfield_07-1024x1024.png"),
+	preload("res://assets/space-backgrounds/Starfields/Starfield_08-1024x1024.png"),
+]
+
+const ARENA := Rect2(-1600, -900, 3200, 1800)
+const WALL_MARGIN := 80.0
+const SPAWN_CLEAR_RADIUS := 380.0
+const SPACING_PAD := 40.0
+const COUNTS := [12, 8, 5, 2]  # per variant: small, medium, large, huge
+const ASTEROID_RADII := [11.0, 22.0, 45.0, 100.0]
+const PICKUP_RADIUS := 20.0
+const PLAYER_SPAWNS := [Vector2(-600, 0), Vector2(600, 0), Vector2(0, -450), Vector2(0, 450)]
+
+@onready var asteroids: Node2D = $Asteroids
+@onready var players: Node2D = $Players
+@onready var player_spawner: MultiplayerSpawner = $PlayerSpawner
+@onready var asteroid_spawner: MultiplayerSpawner = $AsteroidSpawner
+@onready var pickup_spawner: MultiplayerSpawner = $PickupSpawner
+@onready var stars_far: Sprite2D = $StarsFar/Sprite
+@onready var stars_near: Sprite2D = $StarsNear/Sprite
+
+var _player_count := 0
+var wave := 0
+var enemies_alive := 0
+
+
+func _ready() -> void:
+	player_spawner.spawn_function = _spawn_player
+	asteroid_spawner.spawn_function = _spawn_asteroid
+	pickup_spawner.spawn_function = _spawn_pickup_node
+
+	var stream: AudioStreamMP3 = MUSIC
+	stream.loop = true
+	var music := AudioStreamPlayer.new()
+	music.stream = stream
+	music.volume_db = -14.0
+	music.bus = "Music"
+	add_child(music)
+	music.play()
+
+	# A different pair of starfields every run: dim distant layer,
+	# brighter additive layer up front.
+	var picks := STARFIELDS.duplicate()
+	picks.shuffle()
+	stars_far.texture = picks[0]
+	stars_near.texture = picks[1]
+
+	multiplayer.peer_connected.connect(_on_peer_connected)
+	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
+	multiplayer.connection_failed.connect(_leave)
+	multiplayer.server_disconnected.connect(_leave)
+	Net.setup_peer()
+
+	# Solo counts as the server; clients receive everything replicated.
+	if multiplayer.is_server():
+		_spawn_world()
+		_add_player(1)
+	if Net.mode == Net.Mode.SOLO:
+		_schedule_wave(FIRST_WAVE_DELAY)
+
+
+func _on_peer_connected(id: int) -> void:
+	if multiplayer.is_server():
+		_add_player(id)
+
+
+func _on_peer_disconnected(id: int) -> void:
+	if multiplayer.is_server() and players.has_node(str(id)):
+		players.get_node(str(id)).queue_free()
+
+
+func _leave() -> void:
+	Net.leave()
+
+
+func _add_player(id: int) -> void:
+	player_spawner.spawn([id, _player_count])
+	_player_count += 1
+
+
+func _spawn_player(data: Variant) -> Node:
+	var p := PLAYER_SCENE.instantiate()
+	p.name = str(data[0])
+	p.color_idx = data[1]
+	p.position = PLAYER_SPAWNS[data[1] % PLAYER_SPAWNS.size()]
+	return p
+
+
+func _spawn_asteroid(data: Variant) -> Node:
+	var rock := ASTEROID_SCENE.instantiate()
+	rock.variant = data[0]
+	rock.position = data[1]
+	return rock
+
+
+# Spawns everything with size-aware spacing so nothing starts
+# overlapping (overlap makes the physics solver fling bodies apart).
+func _spawn_world() -> void:
+	var placed: Array = []
+	# Keep every player spawn point clear, not just the arena center.
+	for s in PLAYER_SPAWNS:
+		placed.append({"pos": s, "r": 150.0})
+	# Largest rocks first: they're hardest to fit, smalls fill the gaps.
+	for variant in [3, 2, 1, 0]:
+		for i in COUNTS[variant]:
+			asteroid_spawner.spawn([variant, _find_spot(ASTEROID_RADII[variant], placed)])
+	for kind in PICKUP_SET:
+		_spawn_pickup(kind, placed)
+
+
+func _spawn_pickup(kind: int, placed: Array) -> void:
+	pickup_spawner.spawn([
+		kind,
+		_find_spot(PICKUP_RADIUS, placed),
+		Vector2.from_angle(randf() * TAU) * randf_range(20.0, 70.0),
+		randf_range(-1.2, 1.2),
+	])
+
+
+# Positions and sizes of everything currently floating around, so
+# respawns don't materialize inside a drifting rock.
+func _live_placed() -> Array:
+	var out: Array = []
+	for a in asteroids.get_children():
+		out.append({"pos": a.position, "r": a._radius})
+	for p in $Pickups.get_children():
+		out.append({"pos": p.position, "r": PICKUP_RADIUS})
+	for pl in players.get_children():
+		out.append({"pos": pl.position, "r": 80.0})
+	return out
+
+
+func _spawn_pickup_node(data: Variant) -> Node:
+	var p := PICKUP_SCENE.instantiate()
+	p.kind = data[0]
+	p.position = data[1]
+	p.init_velocity = data[2]
+	p.init_spin = data[3]
+	return p
+
+
+# Collected pickups come back somewhere else after a delay.
+func schedule_pickup_respawn(kind: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var t := Timer.new()
+	t.one_shot = true
+	t.wait_time = PICKUP_RESPAWN
+	add_child(t)
+	t.timeout.connect(func():
+		_spawn_pickup(kind, _live_placed())
+		t.queue_free()
+	)
+	t.start()
+
+
+# --- Solo wave mode -------------------------------------------------
+
+func _schedule_wave(delay: float) -> void:
+	var t := Timer.new()
+	t.one_shot = true
+	t.wait_time = delay
+	add_child(t)
+	t.timeout.connect(func():
+		_start_wave()
+		t.queue_free()
+	)
+	t.start()
+
+
+func _start_wave() -> void:
+	wave += 1
+	var count := 1 + wave
+	# Early waves are mostly rammers; gunners creep in over time.
+	var gunner_chance := minf(0.2 + wave * 0.06, 0.55)
+	for i in count:
+		var e := ENEMY_SCENE.instantiate()
+		e.kind = 1 if randf() < gunner_chance else 0
+		e.position = _edge_spawn()
+		e.died.connect(_on_enemy_died)
+		$Enemies.add_child(e)
+		e.reset_physics_interpolation()
+	enemies_alive = count
+
+
+func _on_enemy_died() -> void:
+	enemies_alive -= 1
+	if enemies_alive <= 0:
+		_schedule_wave(WAVE_BREAK)
+
+
+# A spot just inside a random wall, away from every player.
+func _edge_spawn() -> Vector2:
+	for attempt in 40:
+		var inset := 140.0
+		var p: Vector2
+		match randi() % 4:
+			0:
+				p = Vector2(randf_range(ARENA.position.x + inset, ARENA.end.x - inset), ARENA.position.y + inset)
+			1:
+				p = Vector2(randf_range(ARENA.position.x + inset, ARENA.end.x - inset), ARENA.end.y - inset)
+			2:
+				p = Vector2(ARENA.position.x + inset, randf_range(ARENA.position.y + inset, ARENA.end.y - inset))
+			_:
+				p = Vector2(ARENA.end.x - inset, randf_range(ARENA.position.y + inset, ARENA.end.y - inset))
+		var clear := true
+		for pl in players.get_children():
+			if p.distance_to(pl.position) < 500.0:
+				clear = false
+				break
+		if clear:
+			return p
+	return Vector2(ARENA.end.x - 140.0, 0.0)
+
+
+@rpc("authority", "call_local", "reliable")
+func spawn_break_fx(pos: Vector2, fx_scale: float) -> void:
+	var fx := BREAK_EFFECT.instantiate()
+	fx.scale = Vector2.ONE * fx_scale
+	fx.position = pos
+	add_child(fx)
+	fx.reset_physics_interpolation()
+
+
+func _find_spot(radius: float, placed: Array) -> Vector2:
+	var margin := WALL_MARGIN + radius
+	for attempt in 120:
+		var p := Vector2(
+			randf_range(ARENA.position.x + margin, ARENA.end.x - margin),
+			randf_range(ARENA.position.y + margin, ARENA.end.y - margin)
+		)
+		if p.length() < SPAWN_CLEAR_RADIUS + radius:
+			continue
+		var crowded := false
+		for q in placed:
+			if p.distance_to(q["pos"]) < radius + q["r"] + SPACING_PAD:
+				crowded = true
+				break
+		if not crowded:
+			placed.append({"pos": p, "r": radius})
+			return p
+	# No clean spot found; take anything inside the walls.
+	var fallback := Vector2(
+		randf_range(ARENA.position.x + margin, ARENA.end.x - margin),
+		randf_range(ARENA.position.y + margin, ARENA.end.y - margin)
+	)
+	placed.append({"pos": fallback, "r": radius})
+	return fallback

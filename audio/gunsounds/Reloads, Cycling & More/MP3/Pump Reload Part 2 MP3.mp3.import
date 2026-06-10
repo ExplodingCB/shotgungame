@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://cu6ipgp341e7c"
+path="res://.godot/imported/Pump Reload Part 2 MP3.mp3-4ca84e616e805d1a474ef48ca766d83f.mp3str"
+
+[deps]
+
+source_file="res://audio/gunsounds/Reloads, Cycling & More/MP3/Pump Reload Part 2 MP3.mp3"
+dest_files=["res://.godot/imported/Pump Reload Part 2 MP3.mp3-4ca84e616e805d1a474ef48ca766d83f.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://c4n64ddnd6mh4"
+path="res://.godot/imported/Bipod Raise Both Legs.mp3-3a045ed42323876ac736055eb7902bb6.mp3str"
+
+[deps]
+
+source_file="res://audio/gunsounds/Bipod/MP3/Bipod Raise Both Legs.mp3"
+dest_files=["res://.godot/imported/Bipod Raise Both Legs.mp3-3a045ed42323876ac736055eb7902bb6.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

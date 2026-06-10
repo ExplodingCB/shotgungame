@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bv4q1yilk8asx"
+path="res://.godot/imported/9mm Pistol Slide Lock.mp3-7cf82a298573f385e276455d0a57ea31.mp3str"
+
+[deps]
+
+source_file="res://audio/gunsounds/Pistol/MP3/9mm Pistol Slide Lock.mp3"
+dest_files=["res://.godot/imported/9mm Pistol Slide Lock.mp3-7cf82a298573f385e276455d0a57ea31.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

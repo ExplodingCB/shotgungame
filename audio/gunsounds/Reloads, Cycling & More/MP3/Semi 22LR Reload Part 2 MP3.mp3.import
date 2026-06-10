@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bjkb4y5kp1q6q"
+path="res://.godot/imported/Semi 22LR Reload Part 2 MP3.mp3-99bbeb8f7c1c82c004e56c156107ec12.mp3str"
+
+[deps]
+
+source_file="res://audio/gunsounds/Reloads, Cycling & More/MP3/Semi 22LR Reload Part 2 MP3.mp3"
+dest_files=["res://.godot/imported/Semi 22LR Reload Part 2 MP3.mp3-99bbeb8f7c1c82c004e56c156107ec12.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://cd1d1w6i5bi3"
+path="res://.godot/imported/9mm Magazine Pack.mp3-b27c872ad106c7a1b0dd9aeaeb77a802.mp3str"
+
+[deps]
+
+source_file="res://audio/gunsounds/Mag Pack/MP3/9mm Magazine Pack.mp3"
+dest_files=["res://.godot/imported/9mm Magazine Pack.mp3-b27c872ad106c7a1b0dd9aeaeb77a802.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://drxx6m43u8jbx"
+path="res://.godot/imported/Bipod Deploy Both Legs.mp3-e76af204b746932cc2314ca87965cb2f.mp3str"
+
+[deps]
+
+source_file="res://audio/gunsounds/Bipod/MP3/Bipod Deploy Both Legs.mp3"
+dest_files=["res://.godot/imported/Bipod Deploy Both Legs.mp3-e76af204b746932cc2314ca87965cb2f.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4
