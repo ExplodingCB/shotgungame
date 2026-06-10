@@ -119,6 +119,7 @@ func take_damage(amount: float, dir: Vector2, _at: Vector2, _attacker_id := 0) -
 	# only the killing blow may emit died.
 	if _dead:
 		return
+	Juice.hit_landed(amount * 0.6)
 	health -= amount
 	velocity += dir * amount * HIT_KNOCKBACK
 	sprite.modulate = Color(1.0, 0.45, 0.4)

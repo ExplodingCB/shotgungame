@@ -42,12 +42,30 @@ const START_SHELLS := 8
 const GRAB_RADIUS := 220.0
 const THROW_SPEED := 420.0
 
+# Body contact above this speed hurts the ship you hit — sawed-off and
+# rocket recoil double as a battering ram.
+const RAM_SPEED := 550.0
+const RAM_COOLDOWN := 0.5
+
 var weapon: int = Weapon.SHOTGUN
 var primary: int = Weapon.SHOTGUN  # the one big-gun slot; -1 = empty
 var ammo := {}
 var color_idx := 0
 var health := MAX_HEALTH
 var max_health := MAX_HEALTH
+
+# Which physical device steers this body (see PlayerInput). Couch mode
+# spawns several locally-controlled players, each bound to one device.
+var device := -2
+var slot := 0  # stable couch identity; mirrors color_idx
+var controls: PlayerInput = PlayerInput.new(-2)
+
+# Round play: eliminated players sit out until the next countdown, and
+# everyone's trigger is locked while the countdown runs. _dead rides
+# the synchronizer so every peer (and late joiners) hides the corpse.
+var _dead := false
+var _shown_dead := false
+var input_locked := false
 
 @onready var body_sprite: Sprite2D = $Body
 @onready var gun_pivot: Node2D = $GunPivot
@@ -59,6 +77,8 @@ var max_health := MAX_HEALTH
 
 var _cooldown := 0.0
 var _shake := 0.0
+var _last_health := MAX_HEALTH
+var _ram_cd := 0.0
 var _gun_rest_x := 0.0
 var _spin := 0.0
 var _shown_weapon := -1
@@ -81,36 +101,59 @@ func _enter_tree() -> void:
 
 func _ready() -> void:
 	body_sprite.modulate = COLORS[color_idx % COLORS.size()]
-	camera.enabled = is_multiplayer_authority()
+	if device == -2 and is_multiplayer_authority() and Net.mode != Net.Mode.LOCAL:
+		device = -1  # the one player this machine steers gets KB+M
+	controls = PlayerInput.new(device)
+	# Couch mode frames everyone with one shared camera instead.
+	camera.enabled = is_multiplayer_authority() and Net.mode != Net.Mode.LOCAL
 	_apply_weapon()
 
 
+# True for bodies steered from this machine: the single authority player
+# in solo/networked games, or every couch player in LOCAL mode.
+func is_locally_controlled() -> bool:
+	return is_multiplayer_authority() and device != -2
+
+
+# Identity for scores and kill credit. Networked play keys by peer id;
+# in LOCAL mode every body shares peer 1, so slots stand in (1-based,
+# because attacker key 0 means "nobody" — enemy ships and hazards).
+func fighter_key() -> int:
+	return slot + 1 if Net.mode == Net.Mode.LOCAL else get_multiplayer_authority()
+
+
 func _unhandled_input(event: InputEvent) -> void:
-	if not is_multiplayer_authority() or Net.ui_open:
+	if not is_locally_controlled() or Net.ui_open or _dead or input_locked:
 		return
-	if event is InputEventMouseButton and event.pressed:
-		if event.button_index == MOUSE_BUTTON_WHEEL_UP \
-				or event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_toggle_weapon()
-	elif event is InputEventKey and event.pressed and not event.echo:
+	if controls.is_toggle(event):
+		_toggle_weapon()
+	elif controls.is_grab(event):
+		_try_pickup()
+	elif controls.is_throw(event):
+		throw_weapon(controls.aim(self))
+	elif device == -1 and event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
 			KEY_1:
 				if primary >= 0:
 					_switch_weapon(primary)
 			KEY_2:
 				_switch_weapon(Weapon.PISTOL)
-			KEY_E:
-				_try_pickup()
-			KEY_Q:
-				throw_weapon(global_position.direction_to(get_global_mouse_position()))
 
 
 func _physics_process(delta: float) -> void:
-	if is_multiplayer_authority():
+	if is_locally_controlled():
 		_authority_update(delta)
-	elif weapon != _shown_weapon:
-		# Remote copy: weapon arrives via the synchronizer.
-		_apply_weapon()
+	else:
+		# Remote copy: weapon, health, and death arrive via the
+		# synchronizer; a health drop means a hit landed, so flash
+		# like the authority.
+		if weapon != _shown_weapon:
+			_apply_weapon()
+		if health < _last_health - 0.01:
+			_flash_hit()
+		if _dead != _shown_dead:
+			_apply_dead_state()
+	_last_health = health
 
 	# Shared cosmetics, derived from (possibly synced) state.
 	var flipped := absf(gun_pivot.rotation) > PI / 2.0
@@ -120,13 +163,13 @@ func _physics_process(delta: float) -> void:
 
 
 func _authority_update(delta: float) -> void:
-	var aim := global_position.direction_to(get_global_mouse_position())
-	if aim == Vector2.ZERO:
-		aim = Vector2.RIGHT
+	if _dead:
+		return
+	var aim := controls.aim(self)
 	gun_pivot.rotation = aim.angle()
 
 	_cooldown = maxf(_cooldown - delta, 0.0)
-	if _cooldown == 0.0 and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not Net.ui_open:
+	if _cooldown == 0.0 and controls.fire_held() and not Net.ui_open and not input_locked:
 		_fire(aim)
 
 	# Space drift: only a whisper of friction, so momentum carries
@@ -134,10 +177,18 @@ func _authority_update(delta: float) -> void:
 	velocity = velocity.move_toward(Vector2.ZERO, DRIFT_FRICTION * delta)
 	velocity = velocity.limit_length(MAX_SPEED)
 
+	_ram_cd = maxf(_ram_cd - delta, 0.0)
 	var collision := move_and_collide(velocity * delta)
 	if collision:
 		var normal := collision.get_normal()
-		var rock := collision.get_collider() as RigidBody2D
+		var hit_body := collision.get_collider()
+		if _ram_cd == 0.0 and velocity.length() > RAM_SPEED \
+				and hit_body is Node2D and (hit_body as Node2D).is_in_group("player") \
+				and hit_body.has_method("take_damage"):
+			_ram_cd = RAM_COOLDOWN
+			hit_body.take_damage(velocity.length() * 0.025, -normal,
+					collision.get_position(), fighter_key())
+		var rock := hit_body as RigidBody2D
 		if rock != null:
 			rock.apply_central_impulse(-normal * velocity.length() * PUSH_FACTOR)
 			var lever: Vector2 = (collision.get_position() - rock.global_position).normalized()
@@ -149,13 +200,9 @@ func _authority_update(delta: float) -> void:
 		velocity = velocity.bounce(normal) * WALL_BOUNCE
 		move_and_collide(collision.get_remainder().bounce(normal))
 
-	# Body rotates independently of the gun: A/D to spin, otherwise
-	# whatever the last bump or blast left you with, slowly settling.
-	var spin_input := 0.0
-	if Input.is_key_pressed(KEY_A):
-		spin_input -= 1.0
-	if Input.is_key_pressed(KEY_D):
-		spin_input += 1.0
+	# Body rotates independently of the gun: A/D (or bumpers) to spin,
+	# otherwise whatever the last bump or blast left you with, settling.
+	var spin_input := controls.spin_axis()
 	if spin_input != 0.0:
 		_spin = clampf(_spin + spin_input * SPIN_ACCEL * delta, -MAX_BODY_SPIN, MAX_BODY_SPIN)
 	else:
@@ -163,7 +210,19 @@ func _authority_update(delta: float) -> void:
 	body_sprite.rotation += _spin * delta
 
 	_shake = maxf(_shake - SHAKE_DECAY * delta, 0.0)
-	camera.offset = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * _shake
+	if camera.enabled:
+		camera.offset = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * _shake
+
+
+# Kicks this player's view: their own camera when they have one, the
+# couch-mode shared camera otherwise.
+func _add_shake(amount: float) -> void:
+	if camera.enabled:
+		_shake = maxf(_shake, amount)
+		return
+	var cam: Node = get_tree().current_scene.get_node_or_null("SharedCamera")
+	if cam != null:
+		cam.add_shake(amount)
 
 
 # Equips a weapon carrying exactly `amount` rounds — the load travels
@@ -261,12 +320,15 @@ func _net_throw(kind: int, amount: int, aim: Vector2) -> void:
 			kind, amount,
 			global_position + dir * 50.0,
 			dir * THROW_SPEED + velocity * 0.5,
-			randf_range(-2.0, 2.0))
+			randf_range(-2.0, 2.0),
+			fighter_key())
 
 
 func take_damage(amount: float, dir: Vector2, _at: Vector2, attacker_id := 0) -> void:
 	# Runs on whichever peer's projectile landed the hit; route the
-	# actual damage to the player's owning peer.
+	# actual damage to the player's owning peer. The shooter's machine
+	# is right here, so this is also where landing a hit gets its punch.
+	Juice.hit_landed(amount)
 	if is_multiplayer_authority():
 		_apply_damage(amount, dir, attacker_id)
 	else:
@@ -279,14 +341,31 @@ func _apply_damage(amount: float, dir: Vector2, attacker_id := 0) -> void:
 		return
 	health -= amount
 	velocity += dir * amount * HIT_KNOCKBACK
-	_shake = maxf(_shake, 5.0)
+	_add_shake(5.0)
+	_flash_hit()
+	Juice.rumble(device, 0.6, 0.4, 0.2)
 	if health <= 0.0:
 		# The dying peer knows who landed the killing blow; the server
 		# keeps score (and ignores suicides and enemy-ship kills).
+		# Couch mode is single-process, so it reports directly with the
+		# victim's slot key instead of leaning on the RPC sender id.
 		var main := get_tree().current_scene
-		if main != null and main.has_method("_net_report_kill"):
+		# Decide the fate before reporting: the report may end the round.
+		var out_for_round: bool = main != null \
+				and main.has_method("round_fight_active") and main.round_fight_active()
+		if Net.mode == Net.Mode.LOCAL:
+			if main != null and main.has_method("report_death"):
+				main.report_death(fighter_key(), attacker_id)
+		elif main != null and main.has_method("_net_report_kill"):
 			main._net_report_kill.rpc_id(1, attacker_id)
-		_respawn()
+		if main != null and main.has_method("_net_player_death_fx"):
+			main._net_player_death_fx.rpc(global_position, color_idx)
+		Juice.hitstop(150)
+		Juice.rumble(device, 1.0, 1.0, 0.45)
+		if out_for_round:
+			eliminate()
+		else:
+			_respawn()
 
 
 func _respawn() -> void:
@@ -295,6 +374,45 @@ func _respawn() -> void:
 	_spin = 0.0
 	position = Vector2(randf_range(-1400, 1400), randf_range(-750, 750))
 	reset_physics_interpolation()
+
+
+# Out for the round: the body stays in the tree (scoreboard, camera)
+# but vanishes from play until revive().
+func eliminate() -> void:
+	_dead = true
+	health = 0.0
+	velocity = Vector2.ZERO
+	_apply_dead_state()
+
+
+func revive(at: Vector2) -> void:
+	_dead = false
+	health = MAX_HEALTH
+	velocity = Vector2.ZERO
+	_spin = 0.0
+	_apply_dead_state()
+	global_position = at
+	reset_physics_interpolation()
+
+
+func _apply_dead_state() -> void:
+	_shown_dead = _dead
+	visible = not _dead
+	collision_layer = 0 if _dead else 2
+	collision_mask = 0 if _dead else 3
+
+
+# Back to the starting kit between rounds: shotgun shells + the pistol.
+func reset_loadout() -> void:
+	for id in ammo:
+		ammo[id] = 0
+	ammo[Weapon.SHOTGUN] = START_SHELLS
+	ammo[Weapon.PISTOL] = -1
+	primary = Weapon.SHOTGUN
+	weapon = Weapon.SHOTGUN
+	_cooldown = 0.0
+	_suppress_switch_snd = true
+	_apply_weapon()
 
 
 func _toggle_weapon() -> void:
@@ -328,6 +446,14 @@ func _apply_weapon() -> void:
 	_suppress_switch_snd = false
 
 
+# Red sting on taking a hit, settling back to the player's color.
+func _flash_hit() -> void:
+	body_sprite.modulate = Color(1.0, 0.35, 0.3)
+	var tween := create_tween()
+	tween.tween_property(body_sprite, "modulate",
+			COLORS[color_idx % COLORS.size()], 0.18)
+
+
 func _play_fx(stream: AudioStream) -> void:
 	fx_audio.stream = stream
 	fx_audio.pitch_scale = randf_range(0.95, 1.05)
@@ -346,7 +472,8 @@ func _fire(aim: Vector2) -> void:
 	_fire_fx.rpc(aim, weapon)
 	_cooldown = data["cooldown"]
 	velocity += -aim * data["recoil"]
-	_shake = data["shake"]
+	_add_shake(data["shake"])
+	Juice.rumble(device, 0.0, clampf(float(data["recoil"]) / 1200.0, 0.1, 0.85), 0.12)
 	if data.get("spin_kick", false):
 		_spin = clampf(_spin + randf_range(-1.5, 1.5), -MAX_BODY_SPIN, MAX_BODY_SPIN)
 	# Spent weapons don't break — they stay equipped (dry-clicking) and
@@ -390,7 +517,7 @@ func _spawn_projectiles(aim: Vector2, data: Dictionary, lethal: bool) -> void:
 		p.bounces = int(data.get("bounces", 0))
 		p.exclude = excl
 		p.deals_damage = lethal
-		p.shooter_id = get_multiplayer_authority()
+		p.shooter_id = fighter_key()
 		p.position = muzzle.global_position
 		get_tree().current_scene.add_child(p)
 		p.reset_physics_interpolation()
@@ -418,7 +545,7 @@ func _fire_beam(aim: Vector2, lethal: bool) -> void:
 		to = hit["position"]
 		var target: Object = hit["collider"]
 		if lethal and target != null and target.has_method("take_damage"):
-			target.take_damage(BEAM_DAMAGE, aim, to, get_multiplayer_authority())
+			target.take_damage(BEAM_DAMAGE, aim, to, fighter_key())
 
 	var beam := Line2D.new()
 	beam.points = PackedVector2Array([Vector2.ZERO, to - from])

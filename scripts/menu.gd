@@ -135,6 +135,8 @@ func _build_center() -> void:
 	box.add_child(btns)
 
 	btns.add_child(_menu_button("Play Solo", "solo", func(): Net.start_solo()))
+	btns.add_child(_menu_button("Local Versus  (couch)", "solo",
+			func(): get_tree().change_scene_to_file("res://scenes/local_lobby.tscn")))
 	btns.add_child(_menu_button("Host  (port %d)" % Net.PORT, "host", func(): Net.start_host()))
 
 	var join_row := HBoxContainer.new()

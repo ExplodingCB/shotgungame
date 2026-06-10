@@ -50,9 +50,12 @@ var wave := 0
 var enemies_alive := 0
 var _wave_pending := false
 
-# peer_id -> kills. The server owns this and broadcasts every change;
-# clients only ever read it (the HUD scoreboard).
+# fighter key -> kills (peer id online, slot+1 in couch mode). The
+# server owns this and broadcasts every change; clients only ever read
+# it (the HUD scoreboard).
 var scores := {}
+
+var round_manager: Node = null
 
 
 func _ready() -> void:
@@ -85,7 +88,13 @@ func _ready() -> void:
 	# Solo counts as the server; clients receive everything replicated.
 	if multiplayer.is_server():
 		_spawn_world()
-		_add_player(1)
+		if Net.mode == Net.Mode.LOCAL:
+			var cam := SharedCamera.new()
+			cam.name = "SharedCamera"
+			add_child(cam)
+			_add_local_players()
+		else:
+			_add_player(1)
 		var restock := Timer.new()
 		restock.wait_time = RESTOCK_INTERVAL
 		restock.timeout.connect(_restock_pickups)
@@ -93,6 +102,13 @@ func _ready() -> void:
 		restock.start()
 	if Net.mode == Net.Mode.SOLO:
 		_schedule_wave(FIRST_WAVE_DELAY)
+	else:
+		# Every versus mode runs the same match flow: warm-up lobby,
+		# then rounds. Each peer holds its own manager (same node path
+		# everywhere) so the server's phase broadcasts reach them all.
+		round_manager = RoundManager.new()
+		round_manager.name = "RoundManager"
+		add_child(round_manager)
 
 
 func _on_peer_connected(id: int) -> void:
@@ -107,6 +123,9 @@ func _on_peer_disconnected(id: int) -> void:
 			players.get_node(str(id)).queue_free()
 		scores.erase(id)
 		_sync_scores.rpc(scores)
+		# Leaving mid-fight counts as dying, so the round can resolve.
+		if round_manager != null:
+			round_manager.call_deferred("recheck_alive")
 
 
 # The dying peer reports who killed it; sender identifies the victim,
@@ -115,11 +134,25 @@ func _on_peer_disconnected(id: int) -> void:
 func _net_report_kill(attacker_id: int) -> void:
 	if not multiplayer.is_server():
 		return
-	var victim := multiplayer.get_remote_sender_id()
-	if attacker_id <= 0 or attacker_id == victim:
-		return  # enemy ships and suicides score nothing
-	scores[attacker_id] = int(scores.get(attacker_id, 0)) + 1
-	_sync_scores.rpc(scores)
+	report_death(multiplayer.get_remote_sender_id(), attacker_id)
+
+
+# Server-side bookkeeping for any player death. Keys are fighter keys:
+# peer ids online, slot+1 in couch mode (couch deaths arrive as direct
+# calls — every couch player shares peer 1, so the sender id is mute).
+func report_death(victim_key: int, attacker_key: int) -> void:
+	if not multiplayer.is_server():
+		return
+	if attacker_key > 0 and attacker_key != victim_key:
+		scores[attacker_key] = int(scores.get(attacker_key, 0)) + 1
+		_sync_scores.rpc(scores)
+	if round_manager != null:
+		round_manager.on_player_died(victim_key)
+
+
+# During an active round, deaths eliminate instead of respawning.
+func round_fight_active() -> bool:
+	return round_manager != null and round_manager.fight_active()
 
 
 @rpc("authority", "call_local", "reliable")
@@ -136,10 +169,21 @@ func _add_player(id: int) -> void:
 	_player_count += 1
 
 
+# Couch mode: every joined device gets a player under peer 1's
+# authority. Non-numeric names keep authority at 1 (see player.gd).
+func _add_local_players() -> void:
+	for i in Net.local_roster.size():
+		player_spawner.spawn(["local_%d" % i, i, Net.local_roster[i]])
+	_player_count = Net.local_roster.size()
+
+
 func _spawn_player(data: Variant) -> Node:
 	var p := PLAYER_SCENE.instantiate()
 	p.name = str(data[0])
 	p.color_idx = data[1]
+	p.slot = data[1]
+	if data.size() > 2:
+		p.device = data[2]
 	p.position = PLAYER_SPAWNS[data[1] % PLAYER_SPAWNS.size()]
 	return p
 
@@ -148,6 +192,10 @@ func _spawn_asteroid(data: Variant) -> Node:
 	var rock := ASTEROID_SCENE.instantiate()
 	rock.variant = data[0]
 	rock.position = data[1]
+	if data.size() > 2:
+		rock.volatile = data[2]
+	if data.size() > 3:
+		rock.init_velocity = data[3]
 	return rock
 
 
@@ -159,9 +207,14 @@ func _spawn_world() -> void:
 	for s in PLAYER_SPAWNS:
 		placed.append({"pos": s, "r": 150.0})
 	# Largest rocks first: they're hardest to fit, smalls fill the gaps.
+	# A handful of the small/medium rocks roll volatile (they explode).
 	for variant in [3, 2, 1, 0]:
 		for i in COUNTS[variant]:
-			asteroid_spawner.spawn([variant, _find_spot(ASTEROID_RADII[variant], placed)])
+			asteroid_spawner.spawn([
+				variant,
+				_find_spot(ASTEROID_RADII[variant], placed),
+				variant <= 1 and randf() < 0.18,
+			])
 	for i in WEAPON_PICKUPS:
 		_spawn_rolled_pickup(placed)
 
@@ -178,11 +231,13 @@ func _spawn_rolled_pickup(placed: Array) -> void:
 
 
 # Players call this through the server to drop what they're holding —
-# either a deliberate throw or the swap when grabbing a new gun.
-func spawn_weapon_pickup(kind: int, ammo_amount: int, pos: Vector2, vel: Vector2, spin: float) -> void:
+# either a deliberate throw or the swap when grabbing a new gun. A fast
+# throw arrives armed: it bonks whoever it hits, credited to `thrower`.
+func spawn_weapon_pickup(kind: int, ammo_amount: int, pos: Vector2, vel: Vector2,
+		spin: float, thrower := 0) -> void:
 	if not multiplayer.is_server():
 		return
-	pickup_spawner.spawn([kind, pos, vel, spin, ammo_amount])
+	pickup_spawner.spawn([kind, pos, vel, spin, ammo_amount, thrower])
 
 
 # Positions and sizes of everything currently floating around, so
@@ -205,6 +260,8 @@ func _spawn_pickup_node(data: Variant) -> Node:
 	p.init_velocity = data[2]
 	p.init_spin = data[3]
 	p.ammo = data[4]
+	if data.size() > 5:
+		p.thrower = data[5]
 	return p
 
 
@@ -279,13 +336,40 @@ func _edge_spawn() -> Vector2:
 	return Vector2(ARENA.end.x - 140.0, 0.0)
 
 
+# The dying player's peer broadcasts the blow-up so every screen sees
+# (and feels) it.
+@rpc("any_peer", "call_local", "reliable")
+func _net_player_death_fx(pos: Vector2, color_idx: int) -> void:
+	var fx := PlayerExplosion.new()
+	var colors: Array = preload("res://scripts/player.gd").COLORS
+	fx.color = colors[color_idx % colors.size()]
+	fx.position = pos
+	add_child(fx)
+	fx.reset_physics_interpolation()
+	add_shake(14.0)
+
+
+# Kicks whichever camera this machine is looking through.
+func add_shake(amount: float) -> void:
+	var cam := get_node_or_null("SharedCamera")
+	if cam != null:
+		cam.add_shake(amount)
+		return
+	for p in players.get_children():
+		if p.camera.enabled:
+			p._shake = maxf(p._shake, amount)
+
+
 @rpc("authority", "call_local", "reliable")
-func spawn_break_fx(pos: Vector2, fx_scale: float) -> void:
+func spawn_break_fx(pos: Vector2, fx_scale: float, with_boom := false) -> void:
 	var fx := BREAK_EFFECT.instantiate()
 	fx.scale = Vector2.ONE * fx_scale
 	fx.position = pos
 	add_child(fx)
 	fx.reset_physics_interpolation()
+	if with_boom:
+		Explosions.boom(self, pos)
+		add_shake(8.0)
 
 
 func _find_spot(radius: float, placed: Array) -> Vector2:

@@ -14,14 +14,58 @@ var _host_info_label: Label
 var _score_box: VBoxContainer
 var _score_key := ""
 
+# Couch mode: one compact panel per local player along the bottom.
+var _local_box: HBoxContainer
+var _local_rows := {}  # player node name -> row widgets
+var _round_banner: Label
+
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_build_weapon_panel()
+	if Net.mode == Net.Mode.LOCAL:
+		_build_local_box()
+	else:
+		_build_weapon_panel()
+	if Net.mode != Net.Mode.SOLO:
+		_build_round_banner()
 	_build_hints()
 	_build_wave_label()
 	_build_host_info()
 	_build_scoreboard()
+
+
+# Big center label for round flow: countdown, FIGHT!, winner flashes.
+func _build_round_banner() -> void:
+	_round_banner = Label.new()
+	_round_banner.visible = false
+	_round_banner.anchor_left = 0.5
+	_round_banner.anchor_right = 0.5
+	_round_banner.anchor_top = 0.0
+	_round_banner.offset_left = -500.0
+	_round_banner.offset_right = 500.0
+	_round_banner.offset_top = 90.0
+	_round_banner.offset_bottom = 230.0
+	_round_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var bf := FontVariation.new()
+	bf.base_font = ThemeDB.fallback_font
+	bf.set_spacing(TextServer.SPACING_GLYPH, 8)
+	bf.variation_embolden = 0.8
+	_round_banner.add_theme_font_override("font", bf)
+	_round_banner.add_theme_font_size_override("font_size", 46)
+	_round_banner.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	_round_banner.add_theme_constant_override("outline_size", 8)
+	add_child(_round_banner)
+
+
+func _update_round_banner() -> void:
+	var main := get_tree().current_scene
+	var rm: Node = main.round_manager if main != null and "round_manager" in main else null
+	if rm == null or str(rm.banner_text) == "":
+		_round_banner.visible = false
+		return
+	_round_banner.visible = true
+	_round_banner.text = rm.banner_text
+	_round_banner.add_theme_color_override("font_color", rm.banner_color)
 
 
 # Top-left line the host shares with friends: UPnP progress, then the
@@ -69,6 +113,11 @@ func _build_wave_label() -> void:
 
 func _process(_delta: float) -> void:
 	_update_scoreboard()
+	if Net.mode == Net.Mode.LOCAL:
+		# One shared camera shows everyone, so no off-screen arrows.
+		_update_local_panels()
+		_update_round_banner()
+		return
 	if player == null or not is_instance_valid(player):
 		player = _find_local_player()
 		if player == null:
@@ -80,7 +129,80 @@ func _process(_delta: float) -> void:
 	if prim >= 0:
 		_key1_label.text = WeaponDB.DATA[prim]["name"]
 	_update_wave_label()
+	if _round_banner != null:
+		_update_round_banner()
 	queue_redraw()
+
+
+# --- Couch-mode weapon strips, one per local player ------------------
+
+func _build_local_box() -> void:
+	_local_box = HBoxContainer.new()
+	_local_box.anchor_left = 0.0
+	_local_box.anchor_right = 1.0
+	_local_box.anchor_top = 1.0
+	_local_box.anchor_bottom = 1.0
+	_local_box.offset_top = -78.0
+	_local_box.offset_bottom = -24.0
+	_local_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	_local_box.add_theme_constant_override("separation", 52)
+	_local_box.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	add_child(_local_box)
+
+
+func _update_local_panels() -> void:
+	var locals: Array = []
+	for p in get_tree().get_nodes_in_group("player"):
+		if is_instance_valid(p) and p.is_locally_controlled():
+			locals.append(p)
+	locals.sort_custom(func(a, b): return a.slot < b.slot)
+	for p in locals:
+		var key := str(p.name)
+		if not _local_rows.has(key):
+			_local_rows[key] = _build_local_row(p)
+		var row: Dictionary = _local_rows[key]
+		var w: int = int(p.weapon)
+		var data: Dictionary = WeaponDB.DATA[w]
+		var icon: TextureRect = row["icon"]
+		icon.texture = data["texture"]
+		var num: Label = row["num"]
+		var a: int = int(p.ammo[w])
+		num.text = "∞" if a < 0 else str(a)
+		num.add_theme_color_override("font_color", ALERT if a == 0 else TEXT_BRIGHT)
+		var box: HBoxContainer = row["box"]
+		box.modulate = Color(1, 1, 1, 1.0 if p.visible else 0.3)
+
+
+func _build_local_row(p: Node) -> Dictionary:
+	var box := HBoxContainer.new()
+	box.add_theme_constant_override("separation", 10)
+	_local_box.add_child(box)
+
+	var color: Color = p.COLORS[p.color_idx % p.COLORS.size()]
+	var pnum := Label.new()
+	pnum.text = "P%d" % (int(p.slot) + 1)
+	pnum.add_theme_font_size_override("font_size", 22)
+	pnum.add_theme_color_override("font_color", color)
+	pnum.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	pnum.add_theme_constant_override("outline_size", 4)
+	pnum.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	box.add_child(pnum)
+
+	var icon := TextureRect.new()
+	icon.custom_minimum_size = Vector2(80, 32)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	box.add_child(icon)
+
+	var num := Label.new()
+	num.add_theme_font_size_override("font_size", 24)
+	num.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	num.add_theme_constant_override("outline_size", 4)
+	num.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	box.add_child(num)
+
+	return {"box": box, "icon": icon, "num": num}
 
 
 # --- Kill scoreboard (multiplayer only), top-right ------------------
@@ -103,14 +225,19 @@ func _update_scoreboard() -> void:
 	if Net.mode == Net.Mode.SOLO or players_node == null or not "scores" in main:
 		_score_box.visible = false
 		return
+	var rm: Node = main.round_manager if "round_manager" in main else null
 	var entries: Array = []
 	for p in players_node.get_children():
 		entries.append({
-			"kills": int(main.scores.get(str(p.name).to_int(), 0)),
+			"kills": int(main.scores.get(p.fighter_key(), 0)),
+			"wins": int(rm.round_wins.get(p.fighter_key(), 0)) if rm != null else -1,
 			"color": p.COLORS[p.color_idx % p.COLORS.size()],
 			"num": int(p.color_idx) + 1,
 		})
-	entries.sort_custom(func(a, b): return a["kills"] > b["kills"])
+	entries.sort_custom(func(a, b):
+		if a["wins"] != b["wins"]:
+			return a["wins"] > b["wins"]
+		return a["kills"] > b["kills"])
 	# Rows rebuild only when something actually changed.
 	var key := str(entries)
 	if key == _score_key and _score_box.visible:
@@ -143,6 +270,14 @@ func _update_scoreboard() -> void:
 		name_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
 		name_lbl.add_theme_constant_override("outline_size", 4)
 		row.add_child(name_lbl)
+		if int(e["wins"]) >= 0:
+			var wins_lbl := Label.new()
+			wins_lbl.text = "★%d" % e["wins"]
+			wins_lbl.add_theme_font_size_override("font_size", 18)
+			wins_lbl.add_theme_color_override("font_color", ACCENT)
+			wins_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+			wins_lbl.add_theme_constant_override("outline_size", 4)
+			row.add_child(wins_lbl)
 		var kills_lbl := Label.new()
 		kills_lbl.text = str(e["kills"])
 		kills_lbl.custom_minimum_size = Vector2(34, 0)
@@ -305,6 +440,13 @@ func _build_hints() -> void:
 	hints.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	add_child(hints)
 
+	if Net.mode == Net.Mode.LOCAL:
+		_add_hint(hints, ["LS"], "Aim")
+		_add_hint(hints, ["RT"], "Fire")
+		_add_hint(hints, ["X"], "Grab")
+		_add_hint(hints, ["Y"], "Throw")
+		_add_hint(hints, ["B"], "Swap")
+		return
 	_key1_label = _add_hint(hints, ["1"], "Shotgun")
 	_add_hint(hints, ["2"], "Pistol")
 	_add_hint(hints, ["E"], "Grab")
