@@ -6,7 +6,7 @@ const WEAPON_DATA := WeaponDB.DATA
 
 const PROJECTILE_SCENE := preload("res://scenes/projectile.tscn")
 const SMOKE_PUFF_SCENE := preload("res://scenes/smoke_puff.tscn")
-const GRENADE_SHEET := preload("res://assets/grenades/grenades_by_mtk.png")
+const GRENADE_TEX := preload("res://assets/grenades/white-grenade.png")
 
 const SND_DRY := preload("res://audio/gunsounds/Pistol/MP3/9mm Pistol Dry Fire.mp3")
 const SND_SWITCH := preload("res://audio/gunsounds/Pistol/MP3/9mm Pistol Slide Release.mp3")
@@ -355,11 +355,8 @@ func _grenade_fx(aim: Vector2) -> void:
 	p.damping = 300.0
 	p.scale = Vector2.ONE * 2.2
 	# A real frag sprite instead of the tracer dot.
-	var frag := AtlasTexture.new()
-	frag.atlas = GRENADE_SHEET
-	frag.region = Rect2(0, 0, 16, 16)
 	var spr: Sprite2D = p.get_node("Sprite2D")
-	spr.texture = frag
+	spr.texture = GRENADE_TEX
 	spr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	spr.scale = Vector2.ONE
 	p.explode_radius = GRENADE_RADIUS * explode_mult

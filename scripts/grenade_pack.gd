@@ -6,9 +6,7 @@ extends RigidBody2D
 const SPEED_CAP := 180.0
 const TOUCH_RADIUS := 60.0
 const COUNT := 2
-const GREEN := Color(0.35, 0.9, 0.4)
-const SHEET := preload("res://assets/grenades/grenades_by_mtk.png")
-const FRAG := Rect2(0, 0, 16, 16)  # first cell of the sprite sheet
+const TEX := preload("res://assets/grenades/white-grenade.png")
 
 var init_velocity := Vector2.ZERO
 var init_spin := 0.0
@@ -56,9 +54,7 @@ func _check_touch() -> void:
 			return
 
 
-# Two frags side by side under a green supply glow.
+# Two frags drifting side by side, bare like every other pickup.
 func _draw() -> void:
-	draw_circle(Vector2.ZERO, 32.0, Color(GREEN, 0.14))
-	draw_arc(Vector2.ZERO, 28.0, 0.0, TAU, 48, Color(GREEN, 0.5), 2.5)
-	for x in [-12.0, 12.0]:
-		draw_texture_rect_region(SHEET, Rect2(x - 13, -13, 26, 26), FRAG)
+	for x in [-13.0, 13.0]:
+		draw_texture_rect(TEX, Rect2(x - 11, -16, 22, 32), false)
