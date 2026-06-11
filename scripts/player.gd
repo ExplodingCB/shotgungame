@@ -47,6 +47,15 @@ const START_SHELLS := 8
 const GRAB_RADIUS := 220.0
 const THROW_SPEED := 420.0
 
+# Frag grenades: a consumable lobbed with G (pad A) without leaving
+# your gun. Short fuse, a couple of bounces, then a hefty blast.
+const GRENADE_CAP := 3
+const GRENADE_SPEED := 700.0
+const GRENADE_FUSE := 1.1
+const GRENADE_RADIUS := 160.0
+const GRENADE_DAMAGE := 55.0
+const GRENADE_COOLDOWN := 0.5
+
 # Body contact above this speed hurts the ship you hit — sawed-off and
 # rocket recoil double as a battering ram.
 const RAM_SPEED := 550.0
@@ -55,6 +64,7 @@ const RAM_COOLDOWN := 0.5
 var weapon: int = Weapon.SHOTGUN
 var primary: int = Weapon.SHOTGUN  # the one big-gun slot; -1 = empty
 var ammo := {}
+var grenades := 0  # consumable count, found as packs in versus arenas
 var color_idx := 0
 var health := MAX_HEALTH
 var max_health := MAX_HEALTH
@@ -93,6 +103,7 @@ var input_locked := false
 @onready var fx_audio: AudioStreamPlayer2D = $FxAudio
 
 var _cooldown := 0.0
+var _grenade_cd := 0.0
 var _shake := 0.0
 var _last_health := MAX_HEALTH
 var _ram_cd := 0.0
@@ -166,6 +177,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_try_pickup()
 	elif controls.is_throw(event):
 		throw_weapon(controls.aim(self))
+	elif controls.is_grenade(event):
+		throw_grenade(controls.aim(self))
 	elif device == -1 and event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
 			KEY_1:
@@ -209,6 +222,7 @@ func _authority_update(delta: float) -> void:
 	gun_pivot.rotation = aim.angle()
 
 	_cooldown = maxf(_cooldown - delta, 0.0)
+	_grenade_cd = maxf(_grenade_cd - delta, 0.0)
 	if _cooldown == 0.0 and controls.fire_held() and not Net.ui_open and not input_locked:
 		_fire(aim)
 
@@ -312,6 +326,61 @@ func throw_weapon(aim: Vector2) -> void:
 	if weapon != Weapon.PISTOL:
 		_switch_weapon(Weapon.PISTOL)
 	_play_fx(SND_SWITCH)
+
+
+# Lobs a frag without switching off the wielded gun. Same authority
+# split as gunfire: every peer spawns the visual copy, only the
+# thrower's machine spawns the one that deals damage.
+func throw_grenade(aim: Vector2) -> void:
+	if _grenade_cd > 0.0:
+		return
+	if grenades <= 0:
+		_grenade_cd = GRENADE_COOLDOWN
+		_play_fx(SND_DRY)
+		return
+	grenades -= 1
+	_grenade_cd = GRENADE_COOLDOWN
+	if aim == Vector2.ZERO:
+		aim = Vector2.RIGHT
+	_grenade_fx.rpc(aim.normalized())
+
+
+@rpc("authority", "call_local", "reliable")
+func _grenade_fx(aim: Vector2) -> void:
+	var p := PROJECTILE_SCENE.instantiate()
+	p.velocity = aim * GRENADE_SPEED + velocity * 0.5
+	p.damage = 20.0  # a direct stick detonates on the target
+	p.lifetime = GRENADE_FUSE
+	p.damping = 300.0
+	p.modulate = Color(0.5, 1.0, 0.45)
+	p.scale = Vector2.ONE * 2.2
+	p.explode_radius = GRENADE_RADIUS * explode_mult
+	p.explode_damage = GRENADE_DAMAGE * damage_mult * explode_mult
+	p.bounces = 2
+	var excl: Array[RID] = [get_rid()]
+	p.exclude = excl
+	p.deals_damage = is_multiplayer_authority()
+	p.shooter_id = fighter_key()
+	p.position = global_position + aim * 44.0
+	get_tree().current_scene.add_child(p)
+	p.reset_physics_interpolation()
+	_play_fx(SND_SWITCH)
+
+
+# Grenade-pack touch: routed to the owning peer like the medkit.
+func give_grenades(count: int) -> void:
+	if is_multiplayer_authority():
+		_apply_grenades(count)
+	else:
+		_apply_grenades.rpc_id(get_multiplayer_authority(), count)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _apply_grenades(count: int) -> void:
+	if not is_multiplayer_authority() or multiplayer.get_remote_sender_id() > 1:
+		return
+	grenades = mini(grenades + count, GRENADE_CAP)
+	_play_fx(SND_RACK)
 
 
 func _try_pickup() -> void:
@@ -501,6 +570,7 @@ func reset_loadout() -> void:
 		ammo[id] = 0
 	ammo[Weapon.SHOTGUN] = START_SHELLS
 	ammo[Weapon.PISTOL] = -1
+	grenades = 0
 	primary = Weapon.SHOTGUN
 	primary_b = -1
 	weapon = Weapon.SHOTGUN

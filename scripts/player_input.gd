@@ -3,7 +3,8 @@
 #   -2  remote-replicated copy, no local input at all
 #   -1  keyboard + mouse
 #   0+  joypad with that device id (twin-stick: left stick aims,
-#       right trigger fires, X grab, Y throw, B toggle, LB/RB spin)
+#       right trigger fires, X grab, Y throw, B toggle, LB/RB spin,
+#       A lobs a grenade)
 class_name PlayerInput
 extends RefCounted
 
@@ -67,6 +68,12 @@ func is_throw(event: InputEvent) -> bool:
 	if device == -1:
 		return _key(event, KEY_Q)
 	return _pad(event, JOY_BUTTON_Y)
+
+
+func is_grenade(event: InputEvent) -> bool:
+	if device == -1:
+		return _key(event, KEY_G)
+	return _pad(event, JOY_BUTTON_A)
 
 
 func is_toggle(event: InputEvent) -> bool:

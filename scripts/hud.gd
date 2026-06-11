@@ -9,6 +9,7 @@ var player: Node = null
 
 var _rows: Array[Dictionary] = []
 var _key1_label: Label
+var _grenade_label: Label
 var _wave_label: Label
 var _host_info_label: Label
 var _score_box: VBoxContainer
@@ -134,6 +135,8 @@ func _process(_delta: float) -> void:
 		_update_row(_rows[2], prim_b, prim_b >= 0 and active == prim_b)
 	if prim >= 0:
 		_key1_label.text = WeaponDB.DATA[prim]["name"]
+	_grenade_label.visible = int(player.grenades) > 0
+	_grenade_label.text = "GRENADES ×%d   [G]" % int(player.grenades)
 	_update_wave_label()
 	if _round_banner != null:
 		_update_round_banner()
@@ -175,6 +178,9 @@ func _update_local_panels() -> void:
 		var a: int = int(p.ammo[w])
 		num.text = "∞" if a < 0 else str(a)
 		num.add_theme_color_override("font_color", ALERT if a == 0 else TEXT_BRIGHT)
+		var nades: Label = row["nades"]
+		nades.visible = int(p.grenades) > 0
+		nades.text = "✚%d" % int(p.grenades)
 		var box: HBoxContainer = row["box"]
 		box.modulate = Color(1, 1, 1, 1.0 if p.visible else 0.3)
 
@@ -208,7 +214,16 @@ func _build_local_row(p: Node) -> Dictionary:
 	num.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	box.add_child(num)
 
-	return {"box": box, "icon": icon, "num": num}
+	var nades := Label.new()
+	nades.visible = false
+	nades.add_theme_font_size_override("font_size", 19)
+	nades.add_theme_color_override("font_color", Color(0.5, 1.0, 0.45))
+	nades.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	nades.add_theme_constant_override("outline_size", 4)
+	nades.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	box.add_child(nades)
+
+	return {"box": box, "icon": icon, "num": num, "nades": nades}
 
 
 # --- Kill scoreboard (multiplayer only), top-right ------------------
@@ -357,6 +372,14 @@ func _build_weapon_panel() -> void:
 	# Hidden until the dungeon AUX RACK upgrade adds a second slot.
 	_rows.append(_build_row(panel))
 	(_rows[2]["box"] as Control).visible = false
+	# Frag count under the gun rows; hidden until you're carrying any.
+	_grenade_label = Label.new()
+	_grenade_label.visible = false
+	_grenade_label.add_theme_font_size_override("font_size", 20)
+	_grenade_label.add_theme_color_override("font_color", Color(0.5, 1.0, 0.45))
+	_grenade_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	_grenade_label.add_theme_constant_override("outline_size", 4)
+	panel.add_child(_grenade_label)
 
 
 func _build_row(parent: Control) -> Dictionary:
@@ -459,6 +482,7 @@ func _build_hints() -> void:
 		_add_pad_hint(pads, ["rt"], "Fire")
 		_add_pad_hint(pads, ["x"], "Grab")
 		_add_pad_hint(pads, ["y"], "Throw")
+		_add_pad_hint(pads, ["a"], "Nade")
 		_add_pad_hint(pads, ["b"], "Swap")
 		_add_pad_hint(pads, ["lb", "rb"], "Spin")
 		if Net.local_roster.has(-1):
@@ -467,6 +491,7 @@ func _build_hints() -> void:
 			_add_hint(kb, ["LMB"], "Fire")
 			_add_hint(kb, ["E"], "Grab")
 			_add_hint(kb, ["Q"], "Throw")
+			_add_hint(kb, ["G"], "Nade")
 			_add_hint(kb, ["Wheel"], "Swap")
 			_add_hint(kb, ["A", "D"], "Spin", "/")
 		return
@@ -476,6 +501,7 @@ func _build_hints() -> void:
 	_add_hint(hints, ["LMB"], "Fire")
 	_add_hint(hints, ["E"], "Grab")
 	_add_hint(hints, ["Q"], "Throw")
+	_add_hint(hints, ["G"], "Nade")
 	_add_hint(hints, ["A", "D"], "Spin", "/")
 
 

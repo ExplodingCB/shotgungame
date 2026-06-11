@@ -18,6 +18,13 @@ const RESTOCK_INTERVAL := 10.0
 const MEDKIT_KIND := -1
 const MEDKIT_CHANCE := 0.12
 
+# Grenade two-packs ride the same spawner. Versus only, kept topped up
+# to a couple in the world so frags stay scarce but findable.
+const GRENADE_KIND := -2
+const GRENADE_PACKS := 2
+const GRENADE_CHANCE := 0.35
+const GRENADE_PACK_SCENE := preload("res://scenes/grenade_pack.tscn")
+
 const ENEMY_SCENE := preload("res://scenes/enemy_ship.tscn")
 const FIRST_WAVE_DELAY := 5.0
 const WAVE_BREAK := 5.0
@@ -256,6 +263,16 @@ func _spawn_rolled_pickup(placed: Array) -> void:
 	])
 
 
+# Touch items (medkits, grenade packs) drift in like rolled guns do.
+func _spawn_item_pickup(kind: int) -> void:
+	pickup_spawner.spawn([
+		kind,
+		_find_spot(PICKUP_RADIUS, _live_placed()),
+		Vector2.from_angle(randf() * TAU) * randf_range(20.0, 70.0),
+		randf_range(-1.2, 1.2),
+	])
+
+
 # Players call this through the server to drop what they're holding —
 # either a deliberate throw or the swap when grabbing a new gun. A fast
 # throw arrives armed: it bonks whoever it hits, credited to `thrower`.
@@ -280,12 +297,13 @@ func _live_placed() -> Array:
 
 
 func _spawn_pickup_node(data: Variant) -> Node:
-	if int(data[0]) == MEDKIT_KIND:
-		var kit := MEDKIT_SCENE.instantiate()
-		kit.position = data[1]
-		kit.init_velocity = data[2]
-		kit.init_spin = data[3]
-		return kit
+	if int(data[0]) == MEDKIT_KIND or int(data[0]) == GRENADE_KIND:
+		var item: RigidBody2D = (MEDKIT_SCENE if int(data[0]) == MEDKIT_KIND
+				else GRENADE_PACK_SCENE).instantiate()
+		item.position = data[1]
+		item.init_velocity = data[2]
+		item.init_spin = data[3]
+		return item
 	var p := PICKUP_SCENE.instantiate()
 	p.kind = data[0]
 	p.position = data[1]
@@ -301,15 +319,13 @@ func _spawn_pickup_node(data: Variant) -> Node:
 # guns get picked up and carried around. Versus modes also get a rare
 # Nano-Medkit roll while none is in the world.
 func _restock_pickups() -> void:
-	if Net.mode != Net.Mode.SOLO \
-			and get_tree().get_nodes_in_group("medkits").is_empty() \
-			and randf() < MEDKIT_CHANCE:
-		pickup_spawner.spawn([
-			MEDKIT_KIND,
-			_find_spot(PICKUP_RADIUS, _live_placed()),
-			Vector2.from_angle(randf() * TAU) * randf_range(20.0, 70.0),
-			randf_range(-1.2, 1.2),
-		])
+	if Net.mode != Net.Mode.SOLO:
+		if get_tree().get_nodes_in_group("medkits").is_empty() \
+				and randf() < MEDKIT_CHANCE:
+			_spawn_item_pickup(MEDKIT_KIND)
+		if get_tree().get_nodes_in_group("grenade_packs").size() < GRENADE_PACKS \
+				and randf() < GRENADE_CHANCE:
+			_spawn_item_pickup(GRENADE_KIND)
 	var guns := 0
 	for c in $Pickups.get_children():
 		if c.is_in_group("pickups"):
