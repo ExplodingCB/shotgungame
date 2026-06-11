@@ -1,0 +1,36 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/level_visuals.gd" id="1_vis"]
+[ext_resource type="Script" path="res://scripts/hazards/laser_strip.gd" id="2_laser"]
+
+[sub_resource type="RectangleShape2D" id="wall_h"]
+size = Vector2(1796, 24)
+
+[sub_resource type="RectangleShape2D" id="wall_v"]
+size = Vector2(24, 1148)
+
+[node name="Shoebox" type="Node2D"]
+script = ExtResource("1_vis")
+
+[node name="Walls" type="StaticBody2D" parent="."]
+
+[node name="Top" type="CollisionShape2D" parent="Walls"]
+position = Vector2(0, -562)
+shape = SubResource("wall_h")
+
+[node name="Bottom" type="CollisionShape2D" parent="Walls"]
+position = Vector2(0, 562)
+shape = SubResource("wall_h")
+
+[node name="Left" type="CollisionShape2D" parent="Walls"]
+position = Vector2(-862, 0)
+shape = SubResource("wall_v")
+
+[node name="Right" type="CollisionShape2D" parent="Walls"]
+position = Vector2(862, 0)
+shape = SubResource("wall_v")
+
+[node name="Laser" type="Node2D" parent="."]
+position = Vector2(-850, 0)
+script = ExtResource("2_laser")
+length = 1700.0

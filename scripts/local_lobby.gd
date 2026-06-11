@@ -10,8 +10,11 @@ const COLORS: Array = preload("res://scripts/player.gd").COLORS
 
 var roster: Array = []  # PlayerInput device ids in join order
 
-var _cards: Array[Label] = []
+var _cards: Array[Dictionary] = []  # per slot: {icon, label}
 var _start_label: Label
+var _start_icon: TextureRect
+var _start_sep: Label
+var _start_key: Label
 
 
 func _ready() -> void:
@@ -40,11 +43,15 @@ func _ready() -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(title)
 
-	var subtitle := Label.new()
-	subtitle.text = "pads press Ⓐ to join — keyboard joins with click or Enter"
-	subtitle.add_theme_font_size_override("font_size", 17)
-	subtitle.add_theme_color_override("font_color", TEXT_DIM)
-	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var subtitle := HBoxContainer.new()
+	subtitle.alignment = BoxContainer.ALIGNMENT_CENTER
+	subtitle.add_theme_constant_override("separation", 8)
+	subtitle.add_child(ButtonIcons.icon("a", 30.0))
+	subtitle.add_child(_dim_label("pad joins      ·      "))
+	subtitle.add_child(ButtonIcons.keycap("Click"))
+	subtitle.add_child(_dim_label("/"))
+	subtitle.add_child(ButtonIcons.keycap("Enter"))
+	subtitle.add_child(_dim_label("keyboard joins"))
 	box.add_child(subtitle)
 
 	var spacer := Control.new()
@@ -62,19 +69,42 @@ func _ready() -> void:
 	spacer2.custom_minimum_size = Vector2(0, 26)
 	box.add_child(spacer2)
 
+	var start_row := HBoxContainer.new()
+	start_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	start_row.add_theme_constant_override("separation", 10)
 	_start_label = Label.new()
 	_start_label.add_theme_font_size_override("font_size", 22)
-	_start_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	box.add_child(_start_label)
+	_start_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	start_row.add_child(_start_label)
+	_start_icon = ButtonIcons.icon("start", 34.0)
+	start_row.add_child(_start_icon)
+	_start_sep = _dim_label("/")
+	start_row.add_child(_start_sep)
+	_start_key = ButtonIcons.keycap("Enter")
+	start_row.add_child(_start_key)
+	box.add_child(start_row)
 
-	var hints := Label.new()
-	hints.text = "Start / Enter — fight    ·    Ⓑ / Esc — leave"
-	hints.add_theme_font_size_override("font_size", 15)
-	hints.add_theme_color_override("font_color", TEXT_DIM)
-	hints.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var hints := HBoxContainer.new()
+	hints.alignment = BoxContainer.ALIGNMENT_CENTER
+	hints.add_theme_constant_override("separation", 8)
+	hints.add_child(ButtonIcons.icon("start", 28.0))
+	hints.add_child(ButtonIcons.keycap("Enter"))
+	hints.add_child(_dim_label("fight      ·      "))
+	hints.add_child(ButtonIcons.icon("b", 28.0))
+	hints.add_child(ButtonIcons.keycap("Esc"))
+	hints.add_child(_dim_label("leave"))
 	box.add_child(hints)
 
 	_refresh()
+
+
+func _dim_label(text: String) -> Label:
+	var lbl := Label.new()
+	lbl.text = text
+	lbl.add_theme_font_size_override("font_size", 16)
+	lbl.add_theme_color_override("font_color", TEXT_DIM)
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	return lbl
 
 
 func _build_card(i: int) -> Control:
@@ -103,24 +133,40 @@ func _build_card(i: int) -> Control:
 	pnum.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(pnum)
 
-	var who := Label.new()
-	who.add_theme_font_size_override("font_size", 16)
-	who.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# "press A to join" with the real button sprite; swaps to the
+	# device name once someone claims the slot.
+	var who := HBoxContainer.new()
+	who.alignment = BoxContainer.ALIGNMENT_CENTER
+	who.add_theme_constant_override("separation", 7)
+	var icon := ButtonIcons.icon("a", 26.0)
+	who.add_child(icon)
+	var lbl := Label.new()
+	lbl.add_theme_font_size_override("font_size", 16)
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	who.add_child(lbl)
 	v.add_child(who)
-	_cards.append(who)
+	_cards.append({"icon": icon, "label": lbl})
 	return panel
 
 
 func _refresh() -> void:
 	for i in 4:
+		var icon: TextureRect = _cards[i]["icon"]
+		var lbl: Label = _cards[i]["label"]
 		if i < roster.size():
-			_cards[i].text = "KEYBOARD + MOUSE" if roster[i] == -1 else "GAMEPAD %d" % (roster[i] + 1)
-			_cards[i].add_theme_color_override("font_color", TEXT_BRIGHT)
+			icon.visible = false
+			lbl.text = "KEYBOARD + MOUSE" if roster[i] == -1 else "GAMEPAD %d" % (roster[i] + 1)
+			lbl.add_theme_color_override("font_color", TEXT_BRIGHT)
 		else:
-			_cards[i].text = "press Ⓐ to join"
-			_cards[i].add_theme_color_override("font_color", TEXT_DIM)
-	if roster.size() >= 2:
-		_start_label.text = "%d players in — press Start / Enter" % roster.size()
+			icon.visible = true
+			lbl.text = "to join"
+			lbl.add_theme_color_override("font_color", TEXT_DIM)
+	var can_start := roster.size() >= 2
+	_start_icon.visible = can_start
+	_start_sep.visible = can_start
+	_start_key.visible = can_start
+	if can_start:
+		_start_label.text = "%d players in — press" % roster.size()
 		_start_label.add_theme_color_override("font_color", ACCENT)
 	else:
 		_start_label.text = "waiting for at least 2 players…"

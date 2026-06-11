@@ -21,6 +21,7 @@ const MIN_PLAYERS := 2
 
 var phase: int = Phase.LOBBY
 var round_num := 0
+var current_level := 0  # active LevelDB id; rides the phase broadcast
 var round_wins := {}  # fighter key -> rounds won
 var banner_text := ""
 var banner_color := Color(0.96, 0.96, 1.0)
@@ -137,11 +138,14 @@ func _try_start() -> void:
 # --- Server-side transitions (broadcast to every peer) ----------------
 
 func _enter_lobby() -> void:
+	# Warm-up always happens on Classic.
+	current_level = 0
 	_net_phase.rpc(Phase.LOBBY, _phase_data())
 
 
 func _begin_countdown() -> void:
 	round_num += 1
+	current_level = LevelDB.pick_next(current_level)
 	_dead_keys.clear()
 	_t = COUNTDOWN_TIME
 	_net_phase.rpc(Phase.COUNTDOWN, _phase_data())
@@ -204,6 +208,14 @@ func _net_phase(new_phase: int, data: Dictionary) -> void:
 	phase = new_phase
 	round_wins = data.get("wins", round_wins)
 	round_num = int(data.get("round", round_num))
+	# Swap the arena before anyone revives, so spawn points belong to
+	# the level being played (late joiners build it here too). The
+	# server then regrows rocks and guns to the level's own density.
+	current_level = int(data.get("level", current_level))
+	main.level_host.load_level(current_level)
+	if multiplayer.is_server() \
+			and (phase == Phase.LOBBY or phase == Phase.COUNTDOWN):
+		main.rebuild_world()
 	match phase:
 		Phase.LOBBY:
 			_zone.reset()
@@ -236,7 +248,8 @@ func _net_banner(text: String, color: Color) -> void:
 
 
 func _phase_data() -> Dictionary:
-	return {"wins": round_wins, "round": round_num, "fight_t": _fight_t}
+	return {"wins": round_wins, "round": round_num, "fight_t": _fight_t,
+			"level": current_level}
 
 
 # --- Chaos events ------------------------------------------------------
@@ -296,5 +309,5 @@ func _local_players() -> Array:
 
 
 func _spawn_for(p: Node) -> Vector2:
-	var spawns: Array = main.PLAYER_SPAWNS
+	var spawns: Array = main.level_host.spawns
 	return spawns[int(p.slot) % spawns.size()]
