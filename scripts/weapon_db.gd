@@ -483,20 +483,27 @@ static func rarity_color(id: int) -> Color:
 	return RARITY_COLORS[rarity_of(id)]
 
 
-# Weighted rarity roll, then a uniform pick within that tier.
-static func roll_weapon() -> int:
-	var total := 0
-	for w in RARITY_WEIGHTS.values():
-		total += w
-	var roll := randi() % total
-	var tier: int = Rarity.COMMON
-	for r in RARITY_WEIGHTS:
-		roll -= RARITY_WEIGHTS[r]
-		if roll < 0:
-			tier = r
-			break
+# Weighted rarity roll, then a uniform pick within that tier. luck
+# grants extra tier rolls and keeps the rarest — dungeon runs use it
+# to make deep-room loot run hot.
+static func roll_weapon(luck := 0) -> int:
+	var tier := _roll_tier()
+	for i in luck:
+		tier = maxi(tier, _roll_tier())
 	var pool: Array = []
 	for id in DATA:
 		if DATA[id]["rarity"] == tier and not DATA[id].get("no_drop", false):
 			pool.append(id)
 	return pool[randi() % pool.size()]
+
+
+static func _roll_tier() -> int:
+	var total := 0
+	for w in RARITY_WEIGHTS.values():
+		total += w
+	var roll := randi() % total
+	for r in RARITY_WEIGHTS:
+		roll -= RARITY_WEIGHTS[r]
+		if roll < 0:
+			return r
+	return Rarity.COMMON

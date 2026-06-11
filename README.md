@@ -1,6 +1,6 @@
 # SHOTGUN DRIFT
 
-Top-down 2D space arena where **recoil is your engine** — your shotgun blast is also your thruster. Drift through an asteroid field, grab floating weapons, fight waves of enemy ships solo, or duel a friend over LAN.
+Top-down 2D space arena where **recoil is your engine** — your shotgun blast is also your thruster. Drift through an asteroid field, grab floating weapons, dive a procedurally generated dungeon solo, or duel a friend over LAN.
 
 ## Requirements
 
@@ -33,6 +33,11 @@ Top-down 2D space arena where **recoil is your engine** — your shotgun blast i
 - **Sniper** — pickup. Instant beam across the whole map, massive recoil, few shots.
 
 Picked-up weapons replace your shotgun; when they run dry they break and the shotgun comes back. Everything (weapons, ammo, asteroids) drifts and collides in zero-G.
+
+## Singleplayer
+
+- **Dungeon Dive** — a roguelite run through procedurally generated chambers. Clear each room, then fly into one of the exit gates: **Armory** (high-tier guns), **Repair Bay** (hull), or **Tech Cache** (pick a stacking perk). New enemy types unlock as you go deeper, supply drops keep you fed, and every 5th room holds the Warden. Death ends the run; depth is your score.
+- **Arena Waves** — the classic survival mode: endless waves of enemy ships in the open arena.
 
 ## Multiplayer (2+ players)
 

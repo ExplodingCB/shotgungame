@@ -54,6 +54,14 @@ var color_idx := 0
 var health := MAX_HEALTH
 var max_health := MAX_HEALTH
 
+# Dungeon-run perk hooks (scripts/dungeon/perks.gd writes these).
+# Neutral defaults everywhere else, so versus play is untouched.
+var fire_rate_mult := 1.0
+var damage_mult := 1.0
+var extra_pellets := 0
+var incoming_mult := 1.0
+var explode_mult := 1.0
+
 # Which physical device steers this body (see PlayerInput). Couch mode
 # spawns several locally-controlled players, each bound to one device.
 var device := -2
@@ -339,6 +347,7 @@ func take_damage(amount: float, dir: Vector2, _at: Vector2, attacker_id := 0) ->
 func _apply_damage(amount: float, dir: Vector2, attacker_id := 0) -> void:
 	if not is_multiplayer_authority():
 		return
+	amount *= incoming_mult
 	health -= amount
 	velocity += dir * amount * HIT_KNOCKBACK
 	_add_shake(5.0)
@@ -470,7 +479,7 @@ func _fire(aim: Vector2) -> void:
 	if int(ammo[weapon]) > 0:
 		ammo[weapon] = int(ammo[weapon]) - 1
 	_fire_fx.rpc(aim, weapon)
-	_cooldown = data["cooldown"]
+	_cooldown = float(data["cooldown"]) / fire_rate_mult
 	velocity += -aim * data["recoil"]
 	_add_shake(data["shake"])
 	Juice.rumble(device, 0.0, clampf(float(data["recoil"]) / 1200.0, 0.1, 0.85), 0.12)
@@ -502,18 +511,24 @@ func _fire_fx(aim: Vector2, w: int) -> void:
 
 func _spawn_projectiles(aim: Vector2, data: Dictionary, lethal: bool) -> void:
 	var spread: float = deg_to_rad(data["spread_deg"])
+	var count := int(data["count"])
+	if extra_pellets > 0:
+		count += extra_pellets
+		# Bonus pellets force a minimum cone so they don't stack into
+		# one super-bullet on zero-spread guns.
+		spread = maxf(spread, deg_to_rad(3.0))
 	var excl: Array[RID] = [get_rid()]
-	for i in int(data["count"]):
+	for i in count:
 		var p := PROJECTILE_SCENE.instantiate()
 		p.velocity = aim.rotated(randf_range(-spread, spread)) \
 				* randf_range(data["speed_min"], data["speed_max"])
-		p.damage = data["damage"]
+		p.damage = float(data["damage"]) * damage_mult
 		p.lifetime = data["proj_life"]
 		p.damping = data["proj_damping"]
 		p.modulate = data["proj_color"]
 		p.scale = Vector2.ONE * float(data.get("proj_scale", 1.0))
-		p.explode_radius = float(data.get("explode_radius", 0.0))
-		p.explode_damage = float(data.get("explode_damage", 0.0))
+		p.explode_radius = float(data.get("explode_radius", 0.0)) * explode_mult
+		p.explode_damage = float(data.get("explode_damage", 0.0)) * damage_mult * explode_mult
 		p.bounces = int(data.get("bounces", 0))
 		p.exclude = excl
 		p.deals_damage = lethal
@@ -545,7 +560,7 @@ func _fire_beam(aim: Vector2, lethal: bool) -> void:
 		to = hit["position"]
 		var target: Object = hit["collider"]
 		if lethal and target != null and target.has_method("take_damage"):
-			target.take_damage(BEAM_DAMAGE, aim, to, fighter_key())
+			target.take_damage(BEAM_DAMAGE * damage_mult, aim, to, fighter_key())
 
 	var beam := Line2D.new()
 	beam.points = PackedVector2Array([Vector2.ZERO, to - from])
