@@ -142,7 +142,7 @@ func _build_rail() -> void:
 
 	rail.add_child(_build_logo())
 
-	rail.add_child(_vspace(56))
+	rail.add_child(_vspace(64))
 
 	# Pages swap inside this host; the rail never moves.
 	var host := Control.new()
@@ -163,7 +163,7 @@ func _build_rail() -> void:
 
 func _build_main_page(host: Control) -> Control:
 	var page := VBoxContainer.new()
-	page.add_theme_constant_override("separation", 6)
+	page.add_theme_constant_override("separation", 8)
 	host.add_child(page)
 
 	var first := _rail_item(page, "Dungeon Dive", func():
@@ -266,43 +266,49 @@ func _show_page(name_: String) -> void:
 		focus.grab_focus()
 
 
-# The wordmark image, sized for the rail (the PNG carries its own
-# transparent padding).
+# The wordmark, cropped to its visible art (the PNG carries a wide
+# transparent margin) so it sits flush with the text column.
 func _build_logo() -> Control:
+	var art := AtlasTexture.new()
+	art.atlas = LOGO
+	art.region = Rect2(70, 108, 548, 158)
 	var logo := TextureRect.new()
-	logo.texture = LOGO
+	logo.texture = art
 	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
 	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	var ratio := LOGO.get_height() / float(LOGO.get_width())
-	logo.custom_minimum_size = Vector2(500, 500 * ratio)
+	var width := 460.0
+	logo.custom_minimum_size = Vector2(width, width * art.region.size.y / art.region.size.x)
 	logo.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	return logo
 
 
 # --- Rail widgets -------------------------------------------------------
 
-# A clean text menu item: dim at rest, accent + ▸ marker on hover/focus.
+# A clean text menu item: dim at rest, accent + ▸ marker on hover or
+# focus. The marker hangs in the gutter left of the text column, so
+# items stay flush with the logo.
 func _rail_item(page: Container, label: String, on_pressed: Callable) -> Button:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 0)
-	page.add_child(row)
-
-	var marker := Label.new()
-	marker.text = "▸ "
-	marker.custom_minimum_size = Vector2(26, 0)
-	marker.add_theme_font_size_override("font_size", 21)
-	marker.add_theme_color_override("font_color", ACCENT)
-	marker.modulate.a = 0.0
-	row.add_child(marker)
-
 	var btn := _item_button(label)
 	btn.pressed.connect(on_pressed)
+	page.add_child(btn)
+
+	var marker := Label.new()
+	marker.text = "▸"
+	marker.add_theme_font_size_override("font_size", 22)
+	marker.add_theme_color_override("font_color", ACCENT)
+	marker.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	marker.set_anchors_preset(Control.PRESET_LEFT_WIDE)
+	marker.offset_left = -30.0
+	marker.offset_right = -8.0
+	marker.modulate.a = 0.0
+	marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	btn.add_child(marker)
+
 	var show_marker := func(on: bool): marker.modulate.a = 1.0 if on else 0.0
 	btn.mouse_entered.connect(func(): show_marker.call(true))
 	btn.mouse_exited.connect(func(): show_marker.call(btn.has_focus()))
 	btn.focus_entered.connect(func(): show_marker.call(true))
 	btn.focus_exited.connect(func(): show_marker.call(false))
-	row.add_child(btn)
 	return btn
 
 
@@ -311,7 +317,8 @@ func _item_button(label: String) -> Button:
 	btn.text = label
 	btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	btn.add_theme_font_override("font", TITLE_FONT)
-	btn.add_theme_font_size_override("font_size", 20)
+	btn.add_theme_font_size_override("font_size", 24)
+	btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	btn.add_theme_color_override("font_color", TEXT_BRIGHT)
 	btn.add_theme_color_override("font_hover_color", ACCENT)
 	btn.add_theme_color_override("font_focus_color", ACCENT)
