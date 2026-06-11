@@ -1,0 +1,75 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/level_visuals.gd" id="1_vis"]
+[ext_resource type="Script" path="res://scripts/hazards/vortex.gd" id="2_vortex"]
+[ext_resource type="Script" path="res://scripts/hazards/laser_strip.gd" id="3_laser"]
+[ext_resource type="Script" path="res://scripts/hazards/teleporter.gd" id="4_portal"]
+
+[sub_resource type="RectangleShape2D" id="wall_h"]
+size = Vector2(3296, 24)
+
+[sub_resource type="RectangleShape2D" id="wall_v"]
+size = Vector2(24, 1848)
+
+[node name="Maelstrom" type="Node2D"]
+script = ExtResource("1_vis")
+
+[node name="Walls" type="StaticBody2D" parent="."]
+
+[node name="Top" type="CollisionShape2D" parent="Walls"]
+position = Vector2(0, -912)
+shape = SubResource("wall_h")
+
+[node name="Bottom" type="CollisionShape2D" parent="Walls"]
+position = Vector2(0, 912)
+shape = SubResource("wall_h")
+
+[node name="Left" type="CollisionShape2D" parent="Walls"]
+position = Vector2(-1612, 0)
+shape = SubResource("wall_v")
+
+[node name="Right" type="CollisionShape2D" parent="Walls"]
+position = Vector2(1612, 0)
+shape = SubResource("wall_v")
+
+[node name="Vortex" type="Node2D" parent="."]
+script = ExtResource("2_vortex")
+radius = 520.0
+core_radius = 44.0
+
+[node name="LaserN" type="Node2D" parent="."]
+position = Vector2(-500, -700)
+script = ExtResource("3_laser")
+length = 1000.0
+phase_offset = 0.0
+
+[node name="LaserS" type="Node2D" parent="."]
+position = Vector2(-500, 700)
+script = ExtResource("3_laser")
+length = 1000.0
+phase_offset = 1.75
+
+[node name="LaserW" type="Node2D" parent="."]
+position = Vector2(-700, -500)
+rotation = 1.5708
+script = ExtResource("3_laser")
+length = 1000.0
+phase_offset = 0.9
+
+[node name="LaserE" type="Node2D" parent="."]
+position = Vector2(700, -500)
+rotation = 1.5708
+script = ExtResource("3_laser")
+length = 1000.0
+phase_offset = 2.6
+
+[node name="PortalW" type="Node2D" parent="."]
+position = Vector2(-1450, 0)
+script = ExtResource("4_portal")
+twin_path = NodePath("../PortalE")
+
+[node name="PortalE" type="Node2D" parent="."]
+position = Vector2(1450, 0)
+rotation = 3.1416
+script = ExtResource("4_portal")
+twin_path = NodePath("../PortalW")
