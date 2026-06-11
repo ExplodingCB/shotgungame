@@ -21,6 +21,11 @@ const COLORS := [
 const MAX_HEALTH := 100.0
 const HIT_KNOCKBACK := 3.0
 
+# Nano-Medkit overheal: a pickup tops you past full, then the bonus
+# bleeds back down to the cap.
+const OVERHEAL_MAX := 150.0
+const OVERHEAL_DECAY := 3.0  # hp/s
+
 const MAX_SPEED := 900.0
 const DRIFT_FRICTION := 30.0
 const SHAKE_DECAY := 30.0
@@ -198,6 +203,8 @@ func _physics_process(delta: float) -> void:
 func _authority_update(delta: float) -> void:
 	if _dead:
 		return
+	if health > max_health:
+		health = maxf(health - OVERHEAL_DECAY * delta, max_health)
 	var aim := controls.aim(self)
 	gun_pivot.rotation = aim.angle()
 
@@ -381,6 +388,32 @@ func _net_throw(kind: int, amount: int, aim: Vector2) -> void:
 			dir * THROW_SPEED + velocity * 0.5,
 			randf_range(-2.0, 2.0),
 			fighter_key())
+
+
+# Nano-Medkit touch: routes to the owning peer like damage does. The
+# server simulates medkits, so only it (or a direct local call) counts.
+func give_overheal() -> void:
+	if is_multiplayer_authority():
+		_apply_overheal()
+	else:
+		_apply_overheal.rpc_id(get_multiplayer_authority())
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _apply_overheal() -> void:
+	if not is_multiplayer_authority() or multiplayer.get_remote_sender_id() > 1:
+		return
+	health = maxf(health, OVERHEAL_MAX)
+	_flash_heal()
+	_play_fx(SND_RACK)
+
+
+# Gold surge on the heal, settling back to the player's color.
+func _flash_heal() -> void:
+	body_sprite.modulate = Color(1.0, 0.85, 0.3)
+	var tween := create_tween()
+	tween.tween_property(body_sprite, "modulate",
+			COLORS[color_idx % COLORS.size()], 0.35)
 
 
 func take_damage(amount: float, dir: Vector2, _at: Vector2, attacker_id := 0) -> void:

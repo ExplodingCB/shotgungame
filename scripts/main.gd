@@ -4,12 +4,19 @@ const PLAYER_SCENE := preload("res://scenes/player.tscn")
 const ASTEROID_SCENE := preload("res://scenes/asteroid.tscn")
 const BREAK_EFFECT := preload("res://scenes/asteroid_break.tscn")
 const PICKUP_SCENE := preload("res://scenes/pickup.tscn")
+const MEDKIT_SCENE := preload("res://scenes/medkit.tscn")
 
 # Weapon pickups are rolled by rarity weight and spawn with a full
 # magazine. The server tops the map back up to this count over time as
 # guns get carried off (thrown guns just drift, so they still count).
 const WEAPON_PICKUPS := 12
 const RESTOCK_INTERVAL := 10.0
+
+# The Nano-Medkit rides the pickup spawner with this sentinel kind.
+# Legendary-rare: at most one in the world, small odds per restock tick,
+# versus modes only.
+const MEDKIT_KIND := -1
+const MEDKIT_CHANCE := 0.12
 
 const ENEMY_SCENE := preload("res://scenes/enemy_ship.tscn")
 const FIRST_WAVE_DELAY := 5.0
@@ -273,6 +280,12 @@ func _live_placed() -> Array:
 
 
 func _spawn_pickup_node(data: Variant) -> Node:
+	if int(data[0]) == MEDKIT_KIND:
+		var kit := MEDKIT_SCENE.instantiate()
+		kit.position = data[1]
+		kit.init_velocity = data[2]
+		kit.init_spin = data[3]
+		return kit
 	var p := PICKUP_SCENE.instantiate()
 	p.kind = data[0]
 	p.position = data[1]
@@ -285,9 +298,23 @@ func _spawn_pickup_node(data: Variant) -> Node:
 
 
 # Tops the arena back up to WEAPON_PICKUPS, one fresh roll per tick, as
-# guns get picked up and carried around.
+# guns get picked up and carried around. Versus modes also get a rare
+# Nano-Medkit roll while none is in the world.
 func _restock_pickups() -> void:
-	if $Pickups.get_child_count() >= WEAPON_PICKUPS:
+	if Net.mode != Net.Mode.SOLO \
+			and get_tree().get_nodes_in_group("medkits").is_empty() \
+			and randf() < MEDKIT_CHANCE:
+		pickup_spawner.spawn([
+			MEDKIT_KIND,
+			_find_spot(PICKUP_RADIUS, _live_placed()),
+			Vector2.from_angle(randf() * TAU) * randf_range(20.0, 70.0),
+			randf_range(-1.2, 1.2),
+		])
+	var guns := 0
+	for c in $Pickups.get_children():
+		if c.is_in_group("pickups"):
+			guns += 1
+	if guns >= WEAPON_PICKUPS:
 		return
 	_spawn_rolled_pickup(_live_placed())
 
