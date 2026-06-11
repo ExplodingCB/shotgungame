@@ -196,9 +196,8 @@ func _set_banner(text: String, color: Color) -> void:
 func _lobby_text() -> String:
 	var n := _players().size()
 	if n < MIN_PLAYERS:
-		return "WARM-UP\nwaiting for players… (%d joined)" % n
-	var label := "next match" if round_num > 0 else "the match"
-	return "WARM-UP — %d players in\nEnter / Start begins %s" % [n, label]
+		return "WARM-UP\n%d / %d players" % [n, MIN_PLAYERS]
+	return "WARM-UP\nEnter / Start to fight"
 
 
 # --- Replicated state (runs on every peer, including the server) ------
