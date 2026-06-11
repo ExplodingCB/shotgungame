@@ -126,6 +126,12 @@ func _process(_delta: float) -> void:
 	var active: int = int(player.weapon)
 	_update_row(_rows[0], prim, prim >= 0 and active == prim)
 	_update_row(_rows[1], 1, active == 1)
+	# Third slot only exists once the dungeon AUX RACK upgrade is fitted.
+	var prim_b: int = int(player.primary_b)
+	var has_rack: bool = bool(player.second_slot) or prim_b >= 0
+	(_rows[2]["box"] as Control).visible = has_rack
+	if has_rack:
+		_update_row(_rows[2], prim_b, prim_b >= 0 and active == prim_b)
 	if prim >= 0:
 		_key1_label.text = WeaponDB.DATA[prim]["name"]
 	_update_wave_label()
@@ -348,6 +354,9 @@ func _build_weapon_panel() -> void:
 	add_child(panel)
 	_rows.append(_build_row(panel))
 	_rows.append(_build_row(panel))
+	# Hidden until the dungeon AUX RACK upgrade adds a second slot.
+	_rows.append(_build_row(panel))
+	(_rows[2]["box"] as Control).visible = false
 
 
 func _build_row(parent: Control) -> Dictionary:

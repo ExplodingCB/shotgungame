@@ -33,6 +33,23 @@ func _players() -> Array[Node]:
 	return _main().get_node("Players").get_children()
 
 
+# The arena rolls random rocks; one drifting through a staged setup
+# (blocking the ram lane, shoving the volatile cluster apart) turns a
+# check into a coin flip. Sweep the area before staging on it.
+func _clear_rocks_near(center: Vector2, radius: float) -> void:
+	for rock in _main().get_node("Asteroids").get_children():
+		if rock.position.distance_to(center) < radius:
+			rock.queue_free()
+
+
+func _live_rocks() -> int:
+	var n := 0
+	for rock in _main().get_node("Asteroids").get_children():
+		if not rock.is_queued_for_deletion():
+			n += 1
+	return n
+
+
 func _process(_delta: float) -> bool:
 	_frames += 1
 	match _frames:
@@ -79,9 +96,10 @@ func _stage_bonk_and_light_fuse() -> void:
 
 	# Two volatile rocks in a cluster; light the first one. p2 moves
 	# into blast range now — the fuse gives physics time to commit it.
+	_clear_rocks_near(Vector2(830, 620), 450.0)
 	main.asteroid_spawner.spawn([0, Vector2(800, 600), true])
 	main.asteroid_spawner.spawn([0, Vector2(860, 640), true])
-	_rock_count_before = main.get_node("Asteroids").get_child_count()
+	_rock_count_before = _live_rocks()
 	p2.health = 100.0
 	p2.global_position = Vector2(870, 600)
 	p2.velocity = Vector2.ZERO
@@ -100,6 +118,7 @@ func _stage_check_chain_then_ram() -> void:
 
 	# Ram: p1 slams into p2 well above the ram speed threshold.
 	var p1: Node = players[0]
+	_clear_rocks_near(Vector2(-1050, -600), 350.0)
 	p2.health = 100.0
 	p2.global_position = Vector2(-1000, -600)
 	p2.velocity = Vector2.ZERO

@@ -134,7 +134,10 @@ func _build_center() -> void:
 	btns.add_theme_constant_override("separation", 16)
 	box.add_child(btns)
 
-	btns.add_child(_menu_button("Play Solo", "solo", func(): Net.start_solo()))
+	btns.add_child(_menu_button("Dungeon Dive  (solo runs)", "solo", func():
+		Net.mode = Net.Mode.SOLO
+		get_tree().change_scene_to_file("res://scenes/dungeon.tscn")))
+	btns.add_child(_menu_button("Arena Waves  (solo)", "solo", func(): Net.start_solo()))
 	btns.add_child(_menu_button("Local Versus  (couch)", "solo",
 			func(): get_tree().change_scene_to_file("res://scenes/local_lobby.tscn")))
 	btns.add_child(_menu_button("Host  (port %d)" % Net.PORT, "host", func(): Net.start_host()))
