@@ -5,7 +5,6 @@
 class_name ShrinkZone
 extends Node2D
 
-const ARENA := Rect2(-1600, -900, 3200, 1800)
 const GRACE := 15.0        # seconds before the ring starts moving
 const SHRINK_TIME := 60.0  # seconds from full arena to MIN_SCALE
 const MIN_SCALE := 0.3
@@ -13,7 +12,8 @@ const DPS := 6.0
 const TICK := 0.5
 
 var active := false
-var rect := ARENA
+var arena := Rect2(-1600, -900, 3200, 1800)  # active level bounds
+var rect := arena
 
 var _t := 0.0
 var _tick := 0.0
@@ -27,14 +27,26 @@ func _ready() -> void:
 func reset() -> void:
 	active = false
 	_t = 0.0
-	rect = ARENA
+	_sync_arena()
+	rect = arena
 	queue_redraw()
 
 
 func start() -> void:
+	_sync_arena()
 	active = true
 	_t = 0.0
 	_tick = TICK
+
+
+# The ring contracts over whatever level is loaded; the rect stays a
+# rectangle even on shaped arenas (it's damage-only, so that just works).
+func _sync_arena() -> void:
+	if not is_inside_tree():
+		return
+	var lh := get_node_or_null("../LevelHost")
+	if lh != null:
+		arena = lh.bounds
 
 
 func _process(delta: float) -> void:
@@ -43,7 +55,7 @@ func _process(delta: float) -> void:
 	_t += delta
 	var k := clampf((_t - GRACE) / SHRINK_TIME, 0.0, 1.0)
 	var s := lerpf(1.0, MIN_SCALE, k)
-	rect = Rect2(ARENA.get_center() - ARENA.size * s / 2.0, ARENA.size * s)
+	rect = Rect2(arena.get_center() - arena.size * s / 2.0, arena.size * s)
 	queue_redraw()
 	_tick -= delta
 	if _tick <= 0.0:
@@ -66,9 +78,9 @@ func _damage_outside() -> void:
 
 
 func _draw() -> void:
-	if not active or rect.size >= ARENA.size:
+	if not active or rect.size >= arena.size:
 		return
-	var outer := ARENA.grow(240.0)
+	var outer := arena.grow(240.0)
 	var fill := Color(1.0, 0.2, 0.12, 0.12)
 	# Four rects tile everything outside the safe area.
 	draw_rect(Rect2(outer.position,

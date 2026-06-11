@@ -32,6 +32,10 @@ func _exercise() -> void:
 		push_error("no player spawned")
 		quit(1)
 		return
+	if int(root.get_node("Main").level_host.level_id) != 0:
+		push_error("solo should always play the classic level")
+		quit(1)
+		return
 	# Pistol, then every primary in the database via the pickup path
 	# (covers pellets, beams, and explosive/bouncing rounds).
 	player._switch_weapon(WeaponDB.Weapon.PISTOL)

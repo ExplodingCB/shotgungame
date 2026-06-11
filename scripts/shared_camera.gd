@@ -15,11 +15,23 @@ var shake := 0.0
 
 
 func _ready() -> void:
-	limit_left = -1624
-	limit_top = -924
-	limit_right = 1624
-	limit_bottom = 924
+	_apply_limits()
+	var lh := get_node_or_null("../LevelHost")
+	if lh != null:
+		lh.level_loaded.connect(_apply_limits)
 	make_current()
+
+
+# Pin the view to the active level (24px of wall band slack).
+func _apply_limits() -> void:
+	var b := Rect2(-1600, -900, 3200, 1800)
+	var lh := get_node_or_null("../LevelHost")
+	if lh != null:
+		b = lh.bounds
+	limit_left = int(b.position.x) - 24
+	limit_top = int(b.position.y) - 24
+	limit_right = int(b.end.x) + 24
+	limit_bottom = int(b.end.y) + 24
 
 
 func add_shake(amount: float) -> void:
