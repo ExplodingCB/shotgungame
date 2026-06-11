@@ -127,6 +127,33 @@ func _stage_pad_and_laser() -> void:
 	laser._sweep_players(0.016, true)
 	_check(a.health < c_hp, "laser missed a ship that crossed between frames (%s)" % c_hp)
 	laser.free()
+	_stage_teleporter(main, a)
+
+
+func _stage_teleporter(main: Node, a: Node) -> void:
+	var portal_in := Teleporter.new()
+	var portal_out := Teleporter.new()
+	portal_in.position = Vector2(-900, -300)
+	portal_out.position = Vector2(900, 300)
+	portal_out.rotation = PI / 2.0  # arrivals launch along +x = down
+	main.add_child(portal_in)
+	main.add_child(portal_out)
+	portal_in.twin_path = portal_in.get_path_to(portal_out)
+	portal_out.twin_path = portal_out.get_path_to(portal_in)
+	# Ride in: the ship pops out of the twin, redirected along its +x.
+	a.global_position = portal_in.global_position
+	a.velocity = Vector2(500, 0)
+	portal_in._try_send(a, portal_out)
+	_check(a.global_position == portal_out.global_position,
+			"teleporter did not move the ship (%s)" % a.global_position)
+	_check(a.velocity.length() > 400.0 and absf(a.velocity.angle_to(Vector2.DOWN)) < 0.01,
+			"exit velocity not redirected along the twin's facing (%s)" % a.velocity)
+	# The arrival is on cooldown at the twin: it must not ping-pong back.
+	portal_out._try_send(a, portal_in)
+	_check(a.global_position == portal_out.global_position,
+			"teleporter ping-ponged the ship straight back")
+	portal_in.free()
+	portal_out.free()
 
 
 func _finish() -> void:
