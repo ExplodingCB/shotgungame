@@ -456,7 +456,7 @@ const DATA := {
 		"muzzle_x": 76.0,
 		"muzzle_y": -8.0,
 		"max_ammo": 6,
-		"damage": 40.0,
+		"damage": 999.0,  # direct rocket hit is a guaranteed kill
 		"count": 1,
 		"spread_deg": 0.0,
 		"speed_min": 950.0,
