@@ -1,47 +1,71 @@
-# Couch lobby: each pad joins with A, keyboard+mouse joins with click
-# or Enter. Join order is slot order. Once in, d-pad left/right (or
-# arrow keys for KB+M) picks your ship color — colors stay unique
-# across joined players. Start fires with two or more players in.
+# Couch lobby: a big board that slides up over whatever is on screen
+# (the menu keeps its demo brawl running behind it). Each pad joins
+# with A, keyboard+mouse joins with click or Enter. Join order is slot
+# order. Once in, d-pad left/right (or arrow keys for KB+M) picks your
+# ship color — colors stay unique across joined players. Start fires
+# with two or more players in.
 extends Control
+
+# Fired when the player backs out; the menu restores its rail. With no
+# listener (the scene ran standalone) closing falls back to a scene
+# change.
+signal closed
 
 const ACCENT := Color(1.0, 0.62, 0.1)
 const TEXT_BRIGHT := Color(0.94, 0.93, 0.97)
 const TEXT_DIM := Color(0.62, 0.6, 0.68)
 const COLORS: Array = preload("res://scripts/player.gd").COLORS
+const TITLE_FONT := preload("res://assets/fonts/RussoOne-Regular.ttf")
 
 var roster: Array = []  # PlayerInput device ids in join order
 var picks: Array = []  # color index per roster entry
 
-var _cards: Array[Dictionary] = []  # per slot: {icon, label, pnum, swatch, cycle}
+var _cards: Array[Dictionary] = []  # per slot: {panel, icon, label, pnum, swatch, cycle}
 var _start_label: Label
 var _start_icon: TextureRect
 var _start_sep: Label
 var _start_key: Label
+var _dim: ColorRect
+var _panel: PanelContainer
+var _home_y := 0.0
+var _closing := false
 
 
 func _ready() -> void:
-	var bg := ColorRect.new()
-	bg.color = Color(0.04, 0.04, 0.06)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
+	_dim = ColorRect.new()
+	_dim.color = Color(0, 0, 0, 0.0)
+	_dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(_dim)
 
-	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(center)
+	_panel = PanelContainer.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.05, 0.045, 0.07, 0.97)
+	style.border_color = ACCENT
+	style.set_border_width_all(3)
+	style.set_corner_radius_all(26)
+	style.shadow_color = Color(0, 0, 0, 0.5)
+	style.shadow_size = 42
+	style.content_margin_left = 64.0
+	style.content_margin_right = 64.0
+	style.content_margin_top = 42.0
+	style.content_margin_bottom = 38.0
+	_panel.add_theme_stylebox_override("panel", style)
+	add_child(_panel)
 
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 18)
-	center.add_child(box)
+	_panel.add_child(box)
 
 	var title := Label.new()
 	title.text = "LOCAL VERSUS"
 	var tf := FontVariation.new()
-	tf.base_font = ThemeDB.fallback_font
-	tf.set_spacing(TextServer.SPACING_GLYPH, 12)
-	tf.variation_embolden = 0.9
+	tf.base_font = TITLE_FONT
+	tf.set_spacing(TextServer.SPACING_GLYPH, 10)
 	title.add_theme_font_override("font", tf)
-	title.add_theme_font_size_override("font_size", 56)
+	title.add_theme_font_size_override("font_size", 62)
 	title.add_theme_color_override("font_color", ACCENT)
+	title.add_theme_color_override("font_shadow_color", Color(0.45, 0.15, 0.0, 0.7))
+	title.add_theme_constant_override("shadow_offset_y", 4)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(title)
 
@@ -100,6 +124,26 @@ func _ready() -> void:
 	box.add_child(hints)
 
 	_refresh()
+
+	# Let the panel size itself, then make the entrance: board slides
+	# up from below the screen, player cards pop in left to right.
+	await get_tree().process_frame
+	var vs := get_viewport_rect().size
+	_panel.position = (vs - _panel.size) / 2.0
+	_home_y = _panel.position.y
+	_panel.position.y = vs.y + 80.0
+	var tw := create_tween()
+	tw.tween_property(_dim, "color:a", 0.55, 0.3)
+	tw.parallel().tween_property(_panel, "position:y", _home_y, 0.65) \
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	for i in _cards.size():
+		var card: Control = _cards[i]["panel"]
+		card.pivot_offset = card.size / 2.0
+		card.scale = Vector2.ZERO
+		var ct := create_tween()
+		ct.tween_interval(0.42 + i * 0.1)
+		ct.tween_property(card, "scale", Vector2.ONE, 0.32) \
+				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
 func _dim_label(text: String) -> Label:
@@ -162,7 +206,7 @@ func _build_card(i: int) -> Control:
 	cycle.visible = false
 	v.add_child(cycle)
 
-	_cards.append({"icon": icon, "label": lbl, "pnum": pnum,
+	_cards.append({"panel": panel, "icon": icon, "label": lbl, "pnum": pnum,
 			"swatch": swatch, "cycle": cycle})
 	return panel
 
@@ -205,12 +249,17 @@ func _refresh() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _closing:
+		return
 	if event is InputEventJoypadButton and event.pressed:
 		match event.button_index:
 			JOY_BUTTON_A:
 				_join(event.device)
 			JOY_BUTTON_B:
-				_drop(event.device)
+				if roster.has(event.device):
+					_drop(event.device)
+				else:
+					_close()
 			JOY_BUTTON_START:
 				_try_start()
 			JOY_BUTTON_DPAD_LEFT:
@@ -235,7 +284,23 @@ func _unhandled_input(event: InputEvent) -> void:
 				if roster.has(-1):
 					_drop(-1)
 				else:
-					get_tree().change_scene_to_file("res://scenes/menu.tscn")
+					_close()
+
+
+# Slide the board back out, then hand control to whoever opened us.
+func _close() -> void:
+	if _closing:
+		return
+	_closing = true
+	var tw := create_tween()
+	tw.tween_property(_panel, "position:y", get_viewport_rect().size.y + 80.0, 0.4) \
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+	tw.parallel().tween_property(_dim, "color:a", 0.0, 0.4)
+	tw.tween_callback(func():
+		if closed.get_connections().is_empty():
+			get_tree().change_scene_to_file("res://scenes/menu.tscn")
+		else:
+			closed.emit())
 
 
 func _join(device: int) -> void:

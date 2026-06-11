@@ -12,10 +12,13 @@ const TITLE_FONT := preload("res://assets/fonts/RussoOne-Regular.ttf")
 const LOGO := preload("res://assets/mainmenu/logo.png")
 const MUSIC := preload("res://audio/music/main_menu_music.mp3")
 const MAIN_SCENE := preload("res://scenes/main.tscn")
+const LOBBY_SCENE := preload("res://scenes/local_lobby.tscn")
 const PlayerScript := preload("res://scripts/player.gd")
 
 var _ip_edit: LineEdit
 var _swatches: Array[Button] = []
+var _rail_root: Control
+var _lobby: Control
 
 var _pages := {}  # name -> Control, swapped in place on the rail
 var _page := "main"
@@ -111,6 +114,13 @@ func _build_demo() -> void:
 # --- Left rail ---------------------------------------------------------
 
 func _build_rail() -> void:
+	# Everything rail lives under one root, so overlays (the couch
+	# lobby board) can slide in over a clean view of the demo.
+	_rail_root = Control.new()
+	_rail_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_rail_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_rail_root)
+
 	# Dark gradient that owns the left ~40% and fades into the scene.
 	var shade := TextureRect.new()
 	var grad := Gradient.new()
@@ -126,7 +136,7 @@ func _build_rail() -> void:
 	shade.anchor_right = 0.42
 	shade.stretch_mode = TextureRect.STRETCH_SCALE
 	shade.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	add_child(shade)
+	_rail_root.add_child(shade)
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -134,7 +144,7 @@ func _build_rail() -> void:
 	margin.add_theme_constant_override("margin_left", 96)
 	margin.add_theme_constant_override("margin_top", 84)
 	margin.add_theme_constant_override("margin_bottom", 64)
-	add_child(margin)
+	_rail_root.add_child(margin)
 
 	var rail := VBoxContainer.new()
 	rail.add_theme_constant_override("separation", 0)
@@ -170,8 +180,7 @@ func _build_main_page(host: Control) -> Control:
 		Net.mode = Net.Mode.SOLO
 		get_tree().change_scene_to_file("res://scenes/dungeon.tscn"))
 	_rail_item(page, "Arena Waves", func(): Net.start_solo())
-	_rail_item(page, "Local Versus",
-			func(): get_tree().change_scene_to_file("res://scenes/local_lobby.tscn"))
+	_rail_item(page, "Local Versus", _open_lobby)
 	_rail_item(page, "Play Online", func(): _show_page("online"))
 	page.add_child(_vspace(18))
 	_rail_item(page, "Options", func(): _show_page("options"))
@@ -255,6 +264,27 @@ func _build_options_page(host: Control) -> Control:
 
 	_first_focus["options"] = music
 	return page
+
+
+# The couch lobby slides up as a board over the live demo; the rail
+# steps aside until the player backs out.
+func _open_lobby() -> void:
+	if _lobby != null:
+		return
+	var focused := get_viewport().gui_get_focus_owner()
+	if focused != null:
+		focused.release_focus()
+	_rail_root.visible = false
+	_lobby = LOBBY_SCENE.instantiate()
+	_lobby.closed.connect(_close_lobby)
+	add_child(_lobby)
+
+
+func _close_lobby() -> void:
+	_lobby.queue_free()
+	_lobby = null
+	_rail_root.visible = true
+	_show_page("main")
 
 
 func _show_page(name_: String) -> void:
