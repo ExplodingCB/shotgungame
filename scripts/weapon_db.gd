@@ -134,7 +134,7 @@ const DATA := {
 	},
 	Weapon.SNIPER: {
 		"name": "Sniper",
-		"rarity": Rarity.RARE,
+		"rarity": Rarity.LEGENDARY,
 		"texture": preload("res://assets/guns-pixelart/Sniper-rifle-3.png"),
 		"recoil": 1100.0,
 		"cooldown": 1.5,
