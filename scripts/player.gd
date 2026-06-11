@@ -354,11 +354,19 @@ func _grenade_fx(aim: Vector2) -> void:
 	p.lifetime = GRENADE_FUSE
 	p.damping = 300.0
 	p.scale = Vector2.ONE * 2.2
-	# A real frag sprite instead of the tracer dot.
+	# A real frag sprite instead of the tracer dot, with a white glow
+	# rim so the live grenade reads mid-flight.
 	var spr: Sprite2D = p.get_node("Sprite2D")
 	spr.texture = GRENADE_TEX
 	spr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	spr.scale = Vector2.ONE
+	var halo := Sprite2D.new()
+	halo.texture = SpriteOutline.silhouette(GRENADE_TEX)
+	halo.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	halo.scale = Vector2.ONE * 1.45
+	halo.modulate = Color(1.0, 1.0, 1.0, 0.5)
+	halo.z_index = -1
+	p.add_child(halo)
 	p.explode_radius = GRENADE_RADIUS * explode_mult
 	p.explode_damage = GRENADE_DAMAGE * damage_mult * explode_mult
 	p.bounces = 2

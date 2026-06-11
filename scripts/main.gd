@@ -18,11 +18,11 @@ const RESTOCK_INTERVAL := 10.0
 const MEDKIT_KIND := -1
 const MEDKIT_CHANCE := 0.12
 
-# Grenade two-packs ride the same spawner. Versus only, kept topped up
-# to a couple in the world so frags stay scarce but findable.
+# Single grenades ride the same spawner. Versus only, kept topped up
+# to a few in the world so frags stay scarce but findable.
 const GRENADE_KIND := -2
-const GRENADE_PACKS := 2
-const GRENADE_CHANCE := 0.35
+const GRENADE_PACKS := 3
+const GRENADE_CHANCE := 0.45
 const GRENADE_PACK_SCENE := preload("res://scenes/grenade_pack.tscn")
 
 const ENEMY_SCENE := preload("res://scenes/enemy_ship.tscn")

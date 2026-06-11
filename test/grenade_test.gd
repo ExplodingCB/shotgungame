@@ -63,8 +63,8 @@ func _setup() -> void:
 	a.velocity = Vector2.ZERO
 	b.global_position = Vector2(200, 0)
 	b.velocity = Vector2.ZERO
-	# Cap check: collecting a 2-pack while holding 2 stops at the cap.
-	a.grenades = 2
+	# Cap check: collecting a frag while already full stays at the cap.
+	a.grenades = a.GRENADE_CAP
 	main.pickup_spawner.spawn([main.GRENADE_KIND, a.global_position, Vector2.ZERO, 0.0])
 
 

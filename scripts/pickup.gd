@@ -15,6 +15,10 @@ const DISARM_SPEED := 200.0
 const ARM_GRACE := 0.15  # don't clobber the thrower's own face
 const BONK_RADIUS := 26.0
 
+# Thick rarity-colored rim around the gun art so a drifting weapon
+# reads against the dark backdrop from across the arena.
+const OUTLINE_THICKNESS := 3.5
+
 @export var kind := 0
 @export var ammo := 0
 var init_velocity := Vector2.ZERO
@@ -24,6 +28,7 @@ var thrower := 0
 var _collected := false
 var _armed := false
 var _arm_grace := 0.0
+var _outline: Texture2D
 var _prompt: HBoxContainer
 var _prompt_icon: TextureRect
 var _prompt_key: Label
@@ -35,6 +40,8 @@ func _ready() -> void:
 	add_to_group("pickups")
 	sprite.texture = WeaponDB.DATA[kind]["texture"]
 	sprite.scale = Vector2.ONE * 0.9
+	_outline = SpriteOutline.silhouette(sprite.texture)
+	queue_redraw()
 
 	var glow := RarityGlow.new()
 	glow.color = WeaponDB.rarity_color(kind)
@@ -112,6 +119,17 @@ func _physics_process(delta: float) -> void:
 			_armed = false
 		elif _arm_grace == 0.0:
 			_check_bonk()
+
+
+# The outline draws on the body itself, under the gun sprite child.
+func _draw() -> void:
+	if _outline == null:
+		return
+	var size: Vector2 = sprite.texture.get_size() * sprite.scale.x
+	var col := WeaponDB.rarity_color(kind)
+	for i in 8:
+		var off := Vector2.from_angle(i * TAU / 8.0) * OUTLINE_THICKNESS
+		draw_texture_rect(_outline, Rect2(off - size / 2.0, size), false, col)
 
 
 # Overlap query instead of physical contact: guns don't collide with

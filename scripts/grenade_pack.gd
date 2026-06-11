@@ -1,12 +1,13 @@
-# A two-frag supply pack drifting in space. Touch-collected like the
-# Nano-Medkit — no grab key, no weapon swap — topping the toucher up to
+# A single frag drifting in space. Touch-collected like the
+# Nano-Medkit — no grab key, no weapon swap — adding one grenade up to
 # the carry cap. Server-simulated like every pickup.
 extends RigidBody2D
 
 const SPEED_CAP := 180.0
 const TOUCH_RADIUS := 60.0
-const COUNT := 2
+const COUNT := 1
 const TEX := preload("res://assets/grenades/white-grenade.png")
+const RECT := Rect2(-13, -19, 26, 38)
 
 var init_velocity := Vector2.ZERO
 var init_spin := 0.0
@@ -54,7 +55,14 @@ func _check_touch() -> void:
 			return
 
 
-# Two frags drifting side by side, bare like every other pickup.
+# One frag with a glowing white rim: a soft wide pass and a crisp
+# tight pass of the silhouette, then the grenade itself on top.
 func _draw() -> void:
-	for x in [-13.0, 13.0]:
-		draw_texture_rect(TEX, Rect2(x - 11, -16, 22, 32), false)
+	var glow := SpriteOutline.silhouette(TEX)
+	for i in 8:
+		var off := Vector2.from_angle(i * TAU / 8.0)
+		draw_texture_rect(glow, Rect2(RECT.position + off * 6.0, RECT.size),
+				false, Color(1.0, 1.0, 1.0, 0.22))
+		draw_texture_rect(glow, Rect2(RECT.position + off * 2.5, RECT.size),
+				false, Color(1.0, 1.0, 1.0, 0.85))
+	draw_texture_rect(TEX, RECT, false)
