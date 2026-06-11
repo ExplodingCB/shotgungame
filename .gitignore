@@ -4,3 +4,9 @@
 
 # Exported builds
 /builds/
+
+# Brainstorming session artifacts
+.superpowers/
+
+# Windows folder-view junk
+desktop.ini

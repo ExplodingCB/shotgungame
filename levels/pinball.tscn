@@ -1,0 +1,65 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/level_visuals.gd" id="1_vis"]
+[ext_resource type="Script" path="res://scripts/hazards/bounce_pad.gd" id="2_pad"]
+
+[sub_resource type="RectangleShape2D" id="wall_h"]
+size = Vector2(2396, 24)
+
+[sub_resource type="RectangleShape2D" id="wall_v"]
+size = Vector2(24, 1448)
+
+[sub_resource type="RectangleShape2D" id="bumper"]
+size = Vector2(180, 180)
+
+[node name="Pinball" type="Node2D"]
+script = ExtResource("1_vis")
+
+[node name="Walls" type="StaticBody2D" parent="."]
+
+[node name="Top" type="CollisionShape2D" parent="Walls"]
+position = Vector2(0, -712)
+shape = SubResource("wall_h")
+
+[node name="Bottom" type="CollisionShape2D" parent="Walls"]
+position = Vector2(0, 712)
+shape = SubResource("wall_h")
+
+[node name="Left" type="CollisionShape2D" parent="Walls"]
+position = Vector2(-1162, 0)
+shape = SubResource("wall_v")
+
+[node name="Right" type="CollisionShape2D" parent="Walls"]
+position = Vector2(1162, 0)
+shape = SubResource("wall_v")
+
+[node name="Obstacles" type="StaticBody2D" parent="."]
+
+[node name="BumperA" type="CollisionShape2D" parent="Obstacles"]
+position = Vector2(-350, -150)
+rotation = 0.785398
+shape = SubResource("bumper")
+
+[node name="BumperB" type="CollisionShape2D" parent="Obstacles"]
+position = Vector2(350, 150)
+rotation = 0.785398
+shape = SubResource("bumper")
+
+[node name="PadTop" type="Node2D" parent="."]
+position = Vector2(0, -660)
+rotation = 1.5708
+script = ExtResource("2_pad")
+
+[node name="PadBottom" type="Node2D" parent="."]
+position = Vector2(0, 660)
+rotation = -1.5708
+script = ExtResource("2_pad")
+
+[node name="PadLeft" type="Node2D" parent="."]
+position = Vector2(-1110, 0)
+script = ExtResource("2_pad")
+
+[node name="PadRight" type="Node2D" parent="."]
+position = Vector2(1110, 0)
+rotation = 3.14159
+script = ExtResource("2_pad")

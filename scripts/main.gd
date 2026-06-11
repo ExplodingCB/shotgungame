@@ -28,15 +28,14 @@ const STARFIELDS: Array[Texture2D] = [
 	preload("res://assets/space-backgrounds/Starfields/Starfield_08-1024x1024.png"),
 ]
 
-const ARENA := Rect2(-1600, -900, 3200, 1800)
 const WALL_MARGIN := 80.0
 const SPAWN_CLEAR_RADIUS := 380.0
 const SPACING_PAD := 40.0
 const COUNTS := [12, 8, 5, 2]  # per variant: small, medium, large, huge
 const ASTEROID_RADII := [11.0, 22.0, 45.0, 100.0]
 const PICKUP_RADIUS := 20.0
-const PLAYER_SPAWNS := [Vector2(-600, 0), Vector2(600, 0), Vector2(0, -450), Vector2(0, 450)]
 
+@onready var level_host: LevelHost = $LevelHost
 @onready var asteroids: Node2D = $Asteroids
 @onready var players: Node2D = $Players
 @onready var player_spawner: MultiplayerSpawner = $PlayerSpawner
@@ -59,6 +58,9 @@ var round_manager: Node = null
 
 
 func _ready() -> void:
+	# Everyone starts on Classic: it's the solo arena and the warm-up
+	# lobby. Versus rounds swap levels through the round manager.
+	level_host.load_level(0)
 	player_spawner.spawn_function = _spawn_player
 	asteroid_spawner.spawn_function = _spawn_asteroid
 	pickup_spawner.spawn_function = _spawn_pickup_node
@@ -87,7 +89,10 @@ func _ready() -> void:
 
 	# Solo counts as the server; clients receive everything replicated.
 	if multiplayer.is_server():
-		_spawn_world()
+		# Versus modes get their world from the round manager's first
+		# phase broadcast (lobby/countdown both rebuild it).
+		if Net.mode == Net.Mode.SOLO:
+			_spawn_world()
 		if Net.mode == Net.Mode.LOCAL:
 			var cam := SharedCamera.new()
 			cam.name = "SharedCamera"
@@ -184,7 +189,8 @@ func _spawn_player(data: Variant) -> Node:
 	p.slot = data[1]
 	if data.size() > 2:
 		p.device = data[2]
-	p.position = PLAYER_SPAWNS[data[1] % PLAYER_SPAWNS.size()]
+	var spawns: Array = level_host.spawns
+	p.position = spawns[data[1] % spawns.size()]
 	return p
 
 
@@ -204,12 +210,14 @@ func _spawn_asteroid(data: Variant) -> Node:
 func _spawn_world() -> void:
 	var placed: Array = []
 	# Keep every player spawn point clear, not just the arena center.
-	for s in PLAYER_SPAWNS:
+	for s in level_host.spawns:
 		placed.append({"pos": s, "r": 150.0})
 	# Largest rocks first: they're hardest to fit, smalls fill the gaps.
 	# A handful of the small/medium rocks roll volatile (they explode).
+	# Each level dials its own debris density (0 = clean arena).
+	var density: float = level_host.asteroid_density
 	for variant in [3, 2, 1, 0]:
-		for i in COUNTS[variant]:
+		for i in maxi(roundi(COUNTS[variant] * density), 0):
 			asteroid_spawner.spawn([
 				variant,
 				_find_spot(ASTEROID_RADII[variant], placed),
@@ -217,6 +225,17 @@ func _spawn_world() -> void:
 			])
 	for i in WEAPON_PICKUPS:
 		_spawn_rolled_pickup(placed)
+
+
+# Round transitions: tear the floating world down and grow the next
+# level's spread. Server-only — the despawns and spawns replicate.
+func rebuild_world() -> void:
+	if not multiplayer.is_server():
+		return
+	for holder in [asteroids, $Pickups]:
+		for c in holder.get_children():
+			c.free()
+	_spawn_world()
 
 
 func _spawn_rolled_pickup(placed: Array) -> void:
@@ -314,18 +333,21 @@ func _on_enemy_died() -> void:
 
 # A spot just inside a random wall, away from every player.
 func _edge_spawn() -> Vector2:
+	var arena: Rect2 = level_host.bounds
 	for attempt in 40:
 		var inset := 140.0
 		var p: Vector2
 		match randi() % 4:
 			0:
-				p = Vector2(randf_range(ARENA.position.x + inset, ARENA.end.x - inset), ARENA.position.y + inset)
+				p = Vector2(randf_range(arena.position.x + inset, arena.end.x - inset), arena.position.y + inset)
 			1:
-				p = Vector2(randf_range(ARENA.position.x + inset, ARENA.end.x - inset), ARENA.end.y - inset)
+				p = Vector2(randf_range(arena.position.x + inset, arena.end.x - inset), arena.end.y - inset)
 			2:
-				p = Vector2(ARENA.position.x + inset, randf_range(ARENA.position.y + inset, ARENA.end.y - inset))
+				p = Vector2(arena.position.x + inset, randf_range(arena.position.y + inset, arena.end.y - inset))
 			_:
-				p = Vector2(ARENA.end.x - inset, randf_range(ARENA.position.y + inset, ARENA.end.y - inset))
+				p = Vector2(arena.end.x - inset, randf_range(arena.position.y + inset, arena.end.y - inset))
+		if level_host.blocked(p, 60.0):
+			continue
 		var clear := true
 		for pl in players.get_children():
 			if p.distance_to(pl.position) < 500.0:
@@ -333,7 +355,7 @@ func _edge_spawn() -> Vector2:
 				break
 		if clear:
 			return p
-	return Vector2(ARENA.end.x - 140.0, 0.0)
+	return Vector2(arena.end.x - 140.0, 0.0)
 
 
 # The dying player's peer broadcasts the blow-up so every screen sees
@@ -373,13 +395,16 @@ func spawn_break_fx(pos: Vector2, fx_scale: float, with_boom := false) -> void:
 
 
 func _find_spot(radius: float, placed: Array) -> Vector2:
+	var arena: Rect2 = level_host.bounds
 	var margin := WALL_MARGIN + radius
 	for attempt in 120:
 		var p := Vector2(
-			randf_range(ARENA.position.x + margin, ARENA.end.x - margin),
-			randf_range(ARENA.position.y + margin, ARENA.end.y - margin)
+			randf_range(arena.position.x + margin, arena.end.x - margin),
+			randf_range(arena.position.y + margin, arena.end.y - margin)
 		)
 		if p.length() < SPAWN_CLEAR_RADIUS + radius:
+			continue
+		if level_host.blocked(p, radius + SPACING_PAD):
 			continue
 		var crowded := false
 		for q in placed:
@@ -389,10 +414,17 @@ func _find_spot(radius: float, placed: Array) -> Vector2:
 		if not crowded:
 			placed.append({"pos": p, "r": radius})
 			return p
-	# No clean spot found; take anything inside the walls.
-	var fallback := Vector2(
-		randf_range(ARENA.position.x + margin, ARENA.end.x - margin),
-		randf_range(ARENA.position.y + margin, ARENA.end.y - margin)
-	)
-	placed.append({"pos": fallback, "r": radius})
-	return fallback
+	# No spot clear of everything; settle for at least missing the
+	# level geometry so nothing materializes inside a block.
+	for attempt in 40:
+		var fallback := Vector2(
+			randf_range(arena.position.x + margin, arena.end.x - margin),
+			randf_range(arena.position.y + margin, arena.end.y - margin)
+		)
+		if not level_host.blocked(fallback, radius):
+			placed.append({"pos": fallback, "r": radius})
+			return fallback
+	push_warning("no clear spawn spot on level %d" % level_host.level_id)
+	var last: Vector2 = level_host.spawns[0]
+	placed.append({"pos": last, "r": radius})
+	return last

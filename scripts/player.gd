@@ -118,7 +118,25 @@ func _ready() -> void:
 	controls = PlayerInput.new(device)
 	# Couch mode frames everyone with one shared camera instead.
 	camera.enabled = is_multiplayer_authority() and Net.mode != Net.Mode.LOCAL
+	# Players live under Main/Players; the level host is their uncle.
+	var lh: Node = get_node_or_null("../../LevelHost")
+	if lh != null:
+		lh.level_loaded.connect(_apply_camera_limits)
+		_apply_camera_limits()
 	_apply_weapon()
+
+
+# Pin the follow camera inside the active level so small arenas don't
+# show empty space past the walls.
+func _apply_camera_limits() -> void:
+	var lh: Node = get_node_or_null("../../LevelHost")
+	if lh == null:
+		return
+	var b: Rect2 = lh.bounds
+	camera.limit_left = int(b.position.x) - 24
+	camera.limit_top = int(b.position.y) - 24
+	camera.limit_right = int(b.end.x) + 24
+	camera.limit_bottom = int(b.end.y) + 24
 
 
 # True for bodies steered from this machine: the single authority player

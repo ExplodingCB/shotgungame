@@ -433,34 +433,58 @@ func _update_row(row: Dictionary, w: int, active: bool) -> void:
 	box.modulate = Color(1, 1, 1, 1.0 if active else 0.62)
 
 
+# Control instructions along the bottom: pad players read sprite
+# prompts from the Xbox button library, keyboard players read keycaps.
+# Couch mode shows the pad strip (plus a keyboard strip if a KB+M
+# player joined); solo/online play is keyboard+mouse.
 func _build_hints() -> void:
-	var hints := HBoxContainer.new()
-	hints.add_theme_constant_override("separation", 10)
-	hints.anchor_left = 1.0
-	hints.anchor_right = 1.0
-	hints.anchor_top = 1.0
-	hints.anchor_bottom = 1.0
-	hints.offset_left = -960.0
-	hints.offset_top = -62.0
-	hints.offset_right = -28.0
-	hints.offset_bottom = -28.0
-	hints.alignment = BoxContainer.ALIGNMENT_END
-	hints.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	hints.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	add_child(hints)
+	var rows := VBoxContainer.new()
+	rows.add_theme_constant_override("separation", 4)
+	rows.anchor_left = 1.0
+	rows.anchor_right = 1.0
+	rows.anchor_top = 1.0
+	rows.anchor_bottom = 1.0
+	rows.offset_left = -1100.0
+	rows.offset_top = -118.0
+	rows.offset_right = -28.0
+	rows.offset_bottom = -28.0
+	rows.alignment = BoxContainer.ALIGNMENT_END
+	rows.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	rows.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	add_child(rows)
 
 	if Net.mode == Net.Mode.LOCAL:
-		_add_hint(hints, ["LS"], "Aim")
-		_add_hint(hints, ["RT"], "Fire")
-		_add_hint(hints, ["X"], "Grab")
-		_add_hint(hints, ["Y"], "Throw")
-		_add_hint(hints, ["B"], "Swap")
+		var pads := _hint_row(rows)
+		_add_pad_hint(pads, ["ls"], "Aim")
+		_add_pad_hint(pads, ["rt"], "Fire")
+		_add_pad_hint(pads, ["x"], "Grab")
+		_add_pad_hint(pads, ["y"], "Throw")
+		_add_pad_hint(pads, ["b"], "Swap")
+		_add_pad_hint(pads, ["lb", "rb"], "Spin")
+		if Net.local_roster.has(-1):
+			var kb := _hint_row(rows)
+			_add_hint(kb, ["Mouse"], "Aim")
+			_add_hint(kb, ["LMB"], "Fire")
+			_add_hint(kb, ["E"], "Grab")
+			_add_hint(kb, ["Q"], "Throw")
+			_add_hint(kb, ["Wheel"], "Swap")
+			_add_hint(kb, ["A", "D"], "Spin", "/")
 		return
+	var hints := _hint_row(rows)
 	_key1_label = _add_hint(hints, ["1"], "Shotgun")
 	_add_hint(hints, ["2"], "Pistol")
+	_add_hint(hints, ["LMB"], "Fire")
 	_add_hint(hints, ["E"], "Grab")
 	_add_hint(hints, ["Q"], "Throw")
 	_add_hint(hints, ["A", "D"], "Spin", "/")
+
+
+func _hint_row(parent: Control) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	row.alignment = BoxContainer.ALIGNMENT_END
+	parent.add_child(row)
+	return row
 
 
 func _add_hint(parent: Control, keys: Array, label: String, sep := "") -> Label:
@@ -472,35 +496,28 @@ func _add_hint(parent: Control, keys: Array, label: String, sep := "") -> Label:
 			s.add_theme_color_override("font_color", TEXT_DIM)
 			s.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 			parent.add_child(s)
-		parent.add_child(_keycap(k))
+		parent.add_child(ButtonIcons.keycap(k))
 		first = false
+	return _hint_label(parent, label)
+
+
+# Pad hints use the sprite library instead of keycaps.
+func _add_pad_hint(parent: Control, icons: Array, label: String) -> Label:
+	for name in icons:
+		parent.add_child(ButtonIcons.icon(name, 38.0))
+	return _hint_label(parent, label)
+
+
+func _hint_label(parent: Control, label: String) -> Label:
 	var lbl := Label.new()
 	lbl.text = label
 	lbl.add_theme_color_override("font_color", TEXT_BRIGHT)
 	lbl.add_theme_font_size_override("font_size", 16)
+	lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	lbl.add_theme_constant_override("outline_size", 4)
 	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	parent.add_child(lbl)
 	var spacer := Control.new()
 	spacer.custom_minimum_size = Vector2(14, 0)
 	parent.add_child(spacer)
-	return lbl
-
-
-func _keycap(key_text: String) -> Label:
-	var lbl := Label.new()
-	lbl.text = key_text
-	lbl.add_theme_font_size_override("font_size", 15)
-	lbl.add_theme_color_override("font_color", TEXT_BRIGHT)
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.12, 0.13, 0.18, 0.9)
-	style.border_color = Color(0.5, 0.52, 0.62)
-	style.set_border_width_all(1)
-	style.set_corner_radius_all(4)
-	style.content_margin_left = 8.0
-	style.content_margin_right = 8.0
-	style.content_margin_top = 3.0
-	style.content_margin_bottom = 3.0
-	lbl.add_theme_stylebox_override("normal", style)
 	return lbl
