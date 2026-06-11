@@ -94,11 +94,23 @@ func _stage_pad_and_laser() -> void:
 	_check(laser.state() == LaserStrip.Beam.ON, "1.0s into the cycle should burn")
 	laser._t = 2.5
 	_check(laser.state() == LaserStrip.Beam.OFF, "2.5s into the cycle should rest")
-	# Damage: a ship sitting on the beam takes the tick.
+	# Damage: a ship sitting on the beam burns on the sweep.
 	laser.position = b.global_position - Vector2(200, 0)
 	var hp: float = b.health
-	laser._zap()
+	laser._prev[b.get_instance_id()] = laser.to_local(b.global_position)
+	laser._sweep_players(0.016, true)
 	_check(b.health < hp, "laser did not damage a ship on the beam (%s)" % hp)
+	# Cooldown: the very next frame must not burn again.
+	hp = b.health
+	laser._sweep_players(0.016, true)
+	_check(b.health == hp, "laser re-burned inside the cooldown window")
+	# Tunneling: a ship crossing the whole beam between two frames —
+	# faster than any tick could catch — still gets clipped.
+	var c_hp: float = a.health
+	laser._prev[a.get_instance_id()] = laser.to_local(b.global_position + Vector2(0, -400))
+	a.global_position = b.global_position + Vector2(0, 400)
+	laser._sweep_players(0.016, true)
+	_check(a.health < c_hp, "laser missed a ship that crossed between frames (%s)" % c_hp)
 	laser.free()
 
 
