@@ -7,6 +7,8 @@ const SPEED_CAP := 180.0
 const TOUCH_RADIUS := 60.0
 const COUNT := 2
 const GREEN := Color(0.35, 0.9, 0.4)
+const SHEET := preload("res://assets/grenades/grenades_by_mtk.png")
+const FRAG := Rect2(0, 0, 16, 16)  # first cell of the sprite sheet
 
 var init_velocity := Vector2.ZERO
 var init_spin := 0.0
@@ -16,6 +18,7 @@ var _t := randf() * TAU
 
 func _ready() -> void:
 	add_to_group("grenade_packs")
+	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	if multiplayer.is_server():
 		linear_velocity = init_velocity
 		angular_velocity = init_spin
@@ -53,11 +56,9 @@ func _check_touch() -> void:
 			return
 
 
-# Two stubby frags side by side under a green supply glow.
+# Two frags side by side under a green supply glow.
 func _draw() -> void:
 	draw_circle(Vector2.ZERO, 32.0, Color(GREEN, 0.14))
 	draw_arc(Vector2.ZERO, 28.0, 0.0, TAU, 48, Color(GREEN, 0.5), 2.5)
-	for x in [-9.0, 9.0]:
-		draw_rect(Rect2(x - 6, -9, 12, 18), Color(0.2, 0.42, 0.24))
-		draw_rect(Rect2(x - 6, -9, 12, 18), Color(GREEN, 0.9), false, 1.5)
-		draw_rect(Rect2(x - 3, -13, 6, 4), Color(0.75, 0.78, 0.8))
+	for x in [-12.0, 12.0]:
+		draw_texture_rect_region(SHEET, Rect2(x - 13, -13, 26, 26), FRAG)
