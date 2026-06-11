@@ -268,7 +268,8 @@ func _add_player(id: int) -> void:
 # authority. Non-numeric names keep authority at 1 (see player.gd).
 func _add_local_players() -> void:
 	for i in Net.local_roster.size():
-		player_spawner.spawn(["local_%d" % i, i, i, Net.local_roster[i]])
+		var color: int = Net.local_colors[i] if i < Net.local_colors.size() else i
+		player_spawner.spawn(["local_%d" % i, i, color, Net.local_roster[i]])
 	_player_count = Net.local_roster.size()
 
 

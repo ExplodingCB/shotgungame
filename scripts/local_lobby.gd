@@ -1,6 +1,7 @@
 # Couch lobby: each pad joins with A, keyboard+mouse joins with click
-# or Enter. Join order is slot order (P1 orange, P2 cyan, ...). Start
-# fires with two or more players in.
+# or Enter. Join order is slot order. Once in, d-pad left/right (or
+# arrow keys for KB+M) picks your ship color — colors stay unique
+# across joined players. Start fires with two or more players in.
 extends Control
 
 const ACCENT := Color(1.0, 0.62, 0.1)
@@ -9,8 +10,9 @@ const TEXT_DIM := Color(0.62, 0.6, 0.68)
 const COLORS: Array = preload("res://scripts/player.gd").COLORS
 
 var roster: Array = []  # PlayerInput device ids in join order
+var picks: Array = []  # color index per roster entry
 
-var _cards: Array[Dictionary] = []  # per slot: {icon, label}
+var _cards: Array[Dictionary] = []  # per slot: {icon, label, pnum, swatch, cycle}
 var _start_label: Label
 var _start_icon: TextureRect
 var _start_sep: Label
@@ -90,6 +92,8 @@ func _ready() -> void:
 	hints.add_child(ButtonIcons.icon("start", 28.0))
 	hints.add_child(ButtonIcons.keycap("Enter"))
 	hints.add_child(_dim_label("fight      ·      "))
+	hints.add_child(_dim_label("◂ ▸"))
+	hints.add_child(_dim_label("color      ·      "))
 	hints.add_child(ButtonIcons.icon("b", 28.0))
 	hints.add_child(ButtonIcons.keycap("Esc"))
 	hints.add_child(_dim_label("leave"))
@@ -145,7 +149,21 @@ func _build_card(i: int) -> Control:
 	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	who.add_child(lbl)
 	v.add_child(who)
-	_cards.append({"icon": icon, "label": lbl})
+
+	# Ship color: ◂ swatch ▸, shown once the slot is claimed.
+	var cycle := HBoxContainer.new()
+	cycle.alignment = BoxContainer.ALIGNMENT_CENTER
+	cycle.add_theme_constant_override("separation", 10)
+	cycle.add_child(_dim_label("◂"))
+	var swatch := Panel.new()
+	swatch.custom_minimum_size = Vector2(28, 28)
+	cycle.add_child(swatch)
+	cycle.add_child(_dim_label("▸"))
+	cycle.visible = false
+	v.add_child(cycle)
+
+	_cards.append({"icon": icon, "label": lbl, "pnum": pnum,
+			"swatch": swatch, "cycle": cycle})
 	return panel
 
 
@@ -153,14 +171,27 @@ func _refresh() -> void:
 	for i in 4:
 		var icon: TextureRect = _cards[i]["icon"]
 		var lbl: Label = _cards[i]["label"]
+		var pnum: Label = _cards[i]["pnum"]
+		var cycle: Control = _cards[i]["cycle"]
 		if i < roster.size():
 			icon.visible = false
 			lbl.text = "KEYBOARD + MOUSE" if roster[i] == -1 else "GAMEPAD %d" % (roster[i] + 1)
 			lbl.add_theme_color_override("font_color", TEXT_BRIGHT)
+			cycle.visible = true
+			pnum.add_theme_color_override("font_color", COLORS[picks[i]])
+			var swatch: Panel = _cards[i]["swatch"]
+			var sb := StyleBoxFlat.new()
+			sb.bg_color = COLORS[picks[i]]
+			sb.set_corner_radius_all(8)
+			sb.set_border_width_all(2)
+			sb.border_color = Color(0, 0, 0, 0.55)
+			swatch.add_theme_stylebox_override("panel", sb)
 		else:
 			icon.visible = true
 			lbl.text = "to join"
 			lbl.add_theme_color_override("font_color", TEXT_DIM)
+			cycle.visible = false
+			pnum.add_theme_color_override("font_color", COLORS[i])
 	var can_start := roster.size() >= 2
 	_start_icon.visible = can_start
 	_start_sep.visible = can_start
@@ -182,6 +213,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				_drop(event.device)
 			JOY_BUTTON_START:
 				_try_start()
+			JOY_BUTTON_DPAD_LEFT:
+				_cycle_color(event.device, -1)
+			JOY_BUTTON_DPAD_RIGHT:
+				_cycle_color(event.device, 1)
 	elif event is InputEventMouseButton and event.pressed \
 			and event.button_index == MOUSE_BUTTON_LEFT:
 		_join(-1)
@@ -192,6 +227,10 @@ func _unhandled_input(event: InputEvent) -> void:
 					_try_start()
 				else:
 					_join(-1)
+			KEY_LEFT:
+				_cycle_color(-1, -1)
+			KEY_RIGHT:
+				_cycle_color(-1, 1)
 			KEY_ESCAPE:
 				if roster.has(-1):
 					_drop(-1)
@@ -203,15 +242,41 @@ func _join(device: int) -> void:
 	if roster.has(device) or roster.size() >= 4:
 		return
 	roster.append(device)
+	picks.append(_free_color(roster.size() - 1))
 	_refresh()
 
 
 func _drop(device: int) -> void:
-	if roster.has(device):
-		roster.erase(device)
+	var idx := roster.find(device)
+	if idx != -1:
+		roster.remove_at(idx)
+		picks.remove_at(idx)
 		_refresh()
+
+
+# Your slot's classic color when nobody wears it, else the first free.
+func _free_color(slot: int) -> int:
+	if not picks.has(slot % COLORS.size()):
+		return slot % COLORS.size()
+	for i in COLORS.size():
+		if not picks.has(i):
+			return i
+	return slot % COLORS.size()
+
+
+func _cycle_color(device: int, dir: int) -> void:
+	var idx := roster.find(device)
+	if idx == -1:
+		return
+	var c: int = picks[idx]
+	for _step in COLORS.size():
+		c = wrapi(c + dir, 0, COLORS.size())
+		if not picks.has(c):
+			break
+	picks[idx] = c
+	_refresh()
 
 
 func _try_start() -> void:
 	if roster.size() >= 2:
-		Net.start_local(roster)
+		Net.start_local(roster, picks)
