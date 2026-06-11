@@ -1,14 +1,25 @@
 # DUNGEON DIVE: the singleplayer roguelite run. An endless chain of
-# procedurally generated chambers — each rolls a layout pattern, a
-# difficulty budget of enemies, and weapon pickups (deeper = luckier
-# rarity rolls). Clear the room, pick an exit gate by its reward, dive
-# deeper. Every BOSS_EVERY-th chamber holds the Warden. Death ends the
-# run; depth is the score.
+# procedurally generated chambers. Death ends the run; depth is the
+# score.
+#
+# Every room rolls three independent axes, so chambers read as places
+# rather than reskins:
+#   theme   - the encounter's identity (standard mix, swarm den,
+#             ambush, minefield, vault, sniper nest): enemy pool,
+#             furniture, banner name, a subtle hull tint
+#   shape   - interior hull blocks that carve the rectangle into a
+#             donut, corridor, bays, columns, or an L bend
+#   pattern - the asteroid dressing (open, field, pillars, volatile,
+#             cluster)
+# Clearing a room opens reward gates (armory / repair / tech); tech
+# rooms and bosses pay a full perk, ordinary clears sometimes offer a
+# small field upgrade instead. Every BOSS_EVERY-th chamber holds the
+# Warden.
 #
 # Runs offline on the default peer, so all the multiplayer-aware
 # gameplay scripts (player, pickups, asteroids, projectiles) work
-# unchanged — this scene just has to offer the same API surface that
-# main.gd does (spawn_weapon_pickup, report_death, the fx RPCs, …).
+# unchanged; this scene just offers the same API surface as main.gd
+# (spawn_weapon_pickup, report_death, the fx RPCs, ...).
 extends Node2D
 
 const PLAYER_SCENE := preload("res://scenes/player.tscn")
@@ -34,6 +45,8 @@ const Kind := DungeonEnemy.Kind
 const Reward := DungeonDoor.Reward
 
 enum Pattern { OPEN, FIELD, PILLARS, VOLATILE, CLUSTER }
+enum Shape { BOX, DONUT, CORRIDOR, BAYS, COLUMNS, LBEND }
+enum RoomTheme { STANDARD, SWARM_DEN, AMBUSH, MINEFIELD, VAULT, SNIPER_NEST }
 
 # Pattern: room size, asteroid counts per variant (small..huge), and
 # how often a small/medium rock rolls volatile.
@@ -50,19 +63,64 @@ const WALL_MARGIN := 80.0
 const SPACING_PAD := 40.0
 const PICKUP_RADIUS := 20.0
 
+# Encounter identities. Anything a theme leaves unset falls back to the
+# standard roll: full unlocked enemy pool, random shape and pattern,
+# normal furniture.
+const THEMES := {
+	RoomTheme.STANDARD: {"name": "", "min_depth": 1, "tint": Color(1, 1, 1)},
+	RoomTheme.SWARM_DEN: {
+		"name": "SWARM DEN", "min_depth": 2,
+		"pool": [Kind.SWARMLING, Kind.SWARMLING, Kind.SPLITTER, Kind.DRIFTER],
+		"shapes": [Shape.DONUT, Shape.BAYS, Shape.BOX],
+		"pattern": Pattern.FIELD, "crates": 3,
+		"tint": Color(0.96, 1.05, 0.97),
+	},
+	RoomTheme.AMBUSH: {
+		"name": "AMBUSH", "min_depth": 3,
+		"shapes": [Shape.BOX], "pattern": Pattern.OPEN,
+		"pulses": 3, "close_spawns": true,
+		"tint": Color(1.06, 1.0, 0.93),
+	},
+	RoomTheme.MINEFIELD: {
+		"name": "MINEFIELD", "min_depth": 4,
+		"pool": [Kind.GUNNER, Kind.KAMIKAZE, Kind.MINELAYER, Kind.DRIFTER],
+		"shapes": [Shape.BOX, Shape.CORRIDOR], "pattern": Pattern.OPEN,
+		"mines": 6, "crates": 1,
+		"tint": Color(1.07, 0.95, 0.95),
+	},
+	RoomTheme.VAULT: {
+		"name": "VAULT", "min_depth": 3,
+		"hp_mult": 1.3, "budget_mult": 1.25, "rich": true,
+		"pattern": Pattern.CLUSTER,
+		"tint": Color(1.08, 1.03, 0.88),
+	},
+	RoomTheme.SNIPER_NEST: {
+		"name": "SNIPER NEST", "min_depth": 6,
+		"pool": [Kind.SNIPER, Kind.SNIPER, Kind.TURRET, Kind.GUNNER, Kind.DRIFTER],
+		"shapes": [Shape.COLUMNS, Shape.BOX], "pattern": Pattern.PILLARS,
+		"tint": Color(1.0, 0.97, 1.07),
+	},
+}
+const SPECIAL_THEME_CHANCE := 0.45
+
 # Difficulty: each room spends a budget on the unlocked roster.
 # Swarmlings are bought as packs of three.
 const ENEMY_COSTS := {
 	Kind.DRIFTER: 1.5, Kind.GUNNER: 2.0, Kind.SWARMLING: 2.4,
-	Kind.CHARGER: 2.6, Kind.TURRET: 2.6, Kind.SPLITTER: 3.6,
+	Kind.KAMIKAZE: 1.6, Kind.CHARGER: 2.6, Kind.TURRET: 2.6,
+	Kind.BOMBER: 2.8, Kind.SPLITTER: 3.6, Kind.SNIPER: 3.0,
+	Kind.MINELAYER: 3.0,
 }
 const ENEMY_UNLOCK_DEPTH := {
 	Kind.DRIFTER: 1, Kind.GUNNER: 1, Kind.SWARMLING: 2,
-	Kind.CHARGER: 3, Kind.TURRET: 4, Kind.SPLITTER: 6,
+	Kind.CHARGER: 3, Kind.KAMIKAZE: 3, Kind.TURRET: 4,
+	Kind.BOMBER: 5, Kind.SPLITTER: 6, Kind.SNIPER: 6,
+	Kind.MINELAYER: 7,
 }
 const BOSS_EVERY := 5
 const TELEGRAPH_TIME := 0.85
 const DROP_CHANCE := 0.22
+const MINOR_UPGRADE_CHANCE := 0.35
 const SAVE_PATH := "user://dungeon.cfg"
 
 var depth := 0
@@ -83,13 +141,17 @@ var banner_color := Color.WHITE
 var banner_until := 0
 
 var _room_rect := Rect2(-1200, -700, 2400, 1400)
+var _blocks: Array = []     # interior hull slabs (Rect2)
+var _theme: int = RoomTheme.STANDARD
 var _boss_room := false
 var _entry_reward := -1
 var _pulses: Array = []     # arrays of enemy kinds still queued
 var _pending := 0           # telegraphs currently counting down
 var _spawn_delay := 0.0     # breathing room after entering a room
+var _close_spawns := false  # ambushes materialize nearer the player
 var _transitioning := true
 var _wall_shapes: Array = []
+var _block_shapes: Array = []
 var _fade: ColorRect
 
 @onready var asteroids: Node2D = $Asteroids
@@ -97,6 +159,7 @@ var _fade: ColorRect
 @onready var enemies: Node2D = $Enemies
 @onready var pickups: Node2D = $Pickups
 @onready var drops: Node2D = $Drops
+@onready var props: Node2D = $Props
 @onready var doors: Node2D = $Doors
 @onready var walls: StaticBody2D = $Walls
 @onready var backdrop: Node2D = $Backdrop
@@ -192,24 +255,24 @@ func _build_room(d: int, reward: int) -> void:
 		_save_best()
 	_clear_field()
 
-	# Geometry: boss rooms are big and open; everything else rolls a
-	# pattern from the unlocked set, with a little size jitter.
-	var pattern: int = Pattern.OPEN
-	var size := BOSS_ROOM_SIZE
-	var pdata := {"counts": [2, 2, 0, 0], "volatile": 0.0}
-	if not _boss_room:
-		var pool: Array = [Pattern.OPEN, Pattern.FIELD]
-		if d >= 2:
-			pool.append_array([Pattern.PILLARS, Pattern.CLUSTER])
-		if d >= 3:
-			pool.append(Pattern.VOLATILE)
-		pattern = pool[randi() % pool.size()]
-		pdata = PATTERNS[pattern]
-		size = (pdata["size"] as Vector2) * randf_range(0.95, 1.1)
-		size.x = maxf(size.x, 2050.0)
-		size.y = maxf(size.y, 1200.0)
+	_theme = _pick_theme()
+	var tdata: Dictionary = THEMES[_theme]
+	_close_spawns = bool(tdata.get("close_spawns", false))
+
+	# Geometry: pattern picks the rectangle, shape carves it up.
+	var pattern: int = int(tdata.get("pattern", _pick_pattern()))
+	var pdata: Dictionary = PATTERNS[pattern]
+	var size: Vector2 = (pdata["size"] as Vector2) * randf_range(0.95, 1.1)
+	var shape: int = _pick_shape(tdata)
+	if _boss_room:
+		size = BOSS_ROOM_SIZE
+		pdata = {"counts": [2, 2, 0, 0], "volatile": 0.0}
+		shape = Shape.BOX
+	size.x = maxf(size.x, 2050.0)
+	size.y = maxf(size.y, 1200.0)
 	_room_rect = Rect2(-size / 2.0, size)
-	_apply_geometry()
+	_blocks = _blocks_for(shape)
+	_apply_geometry(Color(tdata["tint"]))
 
 	var entry := Vector2(_room_rect.position.x + 170.0, 0.0)
 	var p := _player()
@@ -218,12 +281,11 @@ func _build_room(d: int, reward: int) -> void:
 		p.velocity = Vector2.ZERO
 		p.reset_physics_interpolation()
 
-	# Keep the entry and the exit-gate strip clear of rocks.
+	# Keep the entry and the exit-gate strip clear of rocks and props.
 	var placed: Array = [
 		{"pos": entry, "r": 320.0},
 		{"pos": Vector2(_room_rect.end.x - 100.0, 0.0), "r": 380.0},
 	]
-	_spawn_rocks(pattern, pdata, placed)
 
 	# Entry rewards from the gate you came through.
 	if reward == Reward.REPAIR and p != null:
@@ -231,32 +293,118 @@ func _build_room(d: int, reward: int) -> void:
 	if reward == Reward.ARMORY:
 		for i in 3:
 			var kind := WeaponDB.roll_weapon(3 + mini(depth / 5, 3))
-			_drop_pickup(kind, int(WeaponDB.DATA[kind]["max_ammo"]),
-					_find_spot(PICKUP_RADIUS, placed, entry, 700.0))
+			_drop_pickup(kind, -2, _find_spot(PICKUP_RADIUS, placed, entry, 700.0))
 	# Baseline loot: one rolled gun somewhere in the room.
 	if not _boss_room:
-		var kind := WeaponDB.roll_weapon(mini(depth / 4, 3))
-		_drop_pickup(kind, int(WeaponDB.DATA[kind]["max_ammo"]),
+		_drop_pickup(WeaponDB.roll_weapon(mini(depth / 4, 3)), -2,
 				_find_spot(PICKUP_RADIUS, placed))
 
-	_queue_enemies()
+	_spawn_rocks(pattern, pdata, placed)
+	_spawn_props(tdata, placed)
+	_queue_enemies(tdata)
 	_make_doors()
 
 	if _boss_room:
 		_set_banner("THE WARDEN", Color(1.0, 0.38, 0.28), 3.0)
+	elif str(tdata["name"]) != "":
+		_set_banner(str(tdata["name"]), Color(0.96, 0.96, 1.0), 2.2)
 	else:
 		_set_banner("DEPTH %d" % depth, Color(0.96, 0.96, 1.0), 2.0)
 
 
-func _apply_geometry() -> void:
+func _pick_theme() -> int:
+	if _boss_room or depth <= 1 or randf() > SPECIAL_THEME_CHANCE:
+		return RoomTheme.STANDARD
+	var eligible: Array = []
+	for t in THEMES:
+		if t != RoomTheme.STANDARD and depth >= int(THEMES[t]["min_depth"]):
+			eligible.append(t)
+	if eligible.is_empty():
+		return RoomTheme.STANDARD
+	return eligible[randi() % eligible.size()]
+
+
+func _pick_pattern() -> int:
+	var pool: Array = [Pattern.OPEN, Pattern.FIELD]
+	if depth >= 2:
+		pool.append_array([Pattern.PILLARS, Pattern.CLUSTER])
+	if depth >= 3:
+		pool.append(Pattern.VOLATILE)
+	return pool[randi() % pool.size()]
+
+
+func _pick_shape(tdata: Dictionary) -> int:
+	if tdata.has("shapes"):
+		var pool: Array = tdata["shapes"]
+		return pool[randi() % pool.size()]
+	if depth < 2:
+		return Shape.BOX
+	return randi() % Shape.size()
+
+
+# Interior hull slabs for a shape, sized off the current room rect.
+# Every layout keeps the left-center entry and the right gate strip
+# clear. Sizes jitter a little so repeats don't read as stamps.
+func _blocks_for(shape: int) -> Array:
+	var r := _room_rect
+	var w := r.size.x
+	var h := r.size.y
+	var j := randf_range(0.92, 1.08)
+	match shape:
+		Shape.DONUT:
+			return [Rect2(-0.14 * w * j, -0.17 * h * j, 0.28 * w * j, 0.34 * h * j)]
+		Shape.CORRIDOR:
+			var gap := 250.0 * j
+			return [
+				Rect2(-0.13 * w, r.position.y, 0.26 * w, -gap - r.position.y),
+				Rect2(-0.13 * w, gap, 0.26 * w, r.end.y - gap),
+			]
+		Shape.BAYS:
+			return [
+				Rect2(-0.30 * w, r.position.y, 0.14 * w, 0.18 * h - r.position.y),
+				Rect2(0.10 * w, -0.18 * h, 0.14 * w, r.end.y + 0.18 * h),
+			]
+		Shape.COLUMNS:
+			var out: Array = []
+			for spot in [Vector2(-0.22, -0.22), Vector2(0.02, 0.20), Vector2(0.24, -0.12)]:
+				var side := 0.10 * w * j
+				var c := Vector2(spot.x * w, spot.y * h) \
+						+ Vector2(randf_range(-40.0, 40.0), randf_range(-40.0, 40.0))
+				out.append(Rect2(c - Vector2.ONE * side / 2.0, Vector2.ONE * side))
+			return out
+		Shape.LBEND:
+			return [Rect2(r.position.x + 0.12 * w, r.position.y, 0.40 * w,
+					0.34 * h * j)]
+	return []
+
+
+func _in_block(pos: Vector2, pad: float) -> bool:
+	for b in _blocks:
+		if (b as Rect2).grow(pad).has_point(pos):
+			return true
+	return false
+
+
+func _apply_geometry(tint: Color) -> void:
 	var r := _room_rect
 	var t := 48.0
-	# Top, bottom, left, right — inner faces flush with the room rect.
+	# Top, bottom, left, right; inner faces flush with the room rect.
 	_set_wall(_wall_shapes[0], Vector2(r.size.x + 200.0, t), Vector2(r.get_center().x, r.position.y - t / 2.0))
 	_set_wall(_wall_shapes[1], Vector2(r.size.x + 200.0, t), Vector2(r.get_center().x, r.end.y + t / 2.0))
 	_set_wall(_wall_shapes[2], Vector2(t, r.size.y + 200.0), Vector2(r.position.x - t / 2.0, r.get_center().y))
 	_set_wall(_wall_shapes[3], Vector2(t, r.size.y + 200.0), Vector2(r.end.x + t / 2.0, r.get_center().y))
+	for s in _block_shapes:
+		s.queue_free()
+	_block_shapes.clear()
+	for b in _blocks:
+		var shape := CollisionShape2D.new()
+		shape.shape = RectangleShape2D.new()
+		walls.add_child(shape)
+		_set_wall(shape, (b as Rect2).size, (b as Rect2).get_center())
+		_block_shapes.append(shape)
 	backdrop.rect = r
+	backdrop.blocks = _blocks
+	backdrop.tint = tint
 	backdrop.queue_redraw()
 	var p := _player()
 	if p != null:
@@ -272,7 +420,7 @@ func _set_wall(shape: CollisionShape2D, size: Vector2, pos: Vector2) -> void:
 
 
 func _clear_field() -> void:
-	for holder in [asteroids, enemies, pickups, drops, doors]:
+	for holder in [asteroids, enemies, pickups, drops, props, doors]:
 		for c in holder.get_children():
 			c.queue_free()
 	for c in get_children():
@@ -285,13 +433,16 @@ func _clear_field() -> void:
 
 
 func _spawn_rocks(pattern: int, pdata: Dictionary, placed: Array) -> void:
-	if pattern == Pattern.CLUSTER:
-		# A huge anchor in the middle, mediums ringed around it.
-		_spawn_rock(3, _room_rect.get_center(), false, placed)
-		for i in 6:
-			var pos := _room_rect.get_center() + Vector2.from_angle(i * TAU / 6.0) \
-					* randf_range(230.0, 330.0)
-			_spawn_rock(1, pos, randf() < float(pdata["volatile"]), placed)
+	if pattern == Pattern.CLUSTER and not _boss_room:
+		# A huge anchor in the middle, mediums ringed around it. Skipped
+		# when a center block occupies the same space.
+		if not _in_block(Vector2.ZERO, 120.0):
+			_spawn_rock(3, _room_rect.get_center(), false, placed)
+			for i in 6:
+				var pos := _room_rect.get_center() + Vector2.from_angle(i * TAU / 6.0) \
+						* randf_range(230.0, 330.0)
+				if not _in_block(pos, 40.0):
+					_spawn_rock(1, pos, randf() < float(pdata["volatile"]), placed)
 		for i in int(pdata["counts"][0]):
 			_spawn_rock(0, _find_spot(ASTEROID_RADII[0], placed),
 					randf() < float(pdata["volatile"]), placed)
@@ -312,6 +463,43 @@ func _spawn_rock(variant: int, pos: Vector2, volatile: bool, _placed: Array) -> 
 	rock.reset_physics_interpolation()
 
 
+# Furniture: cargo crates (supplies), the odd wreck (a weapon worth
+# cracking open), and proximity mines in the nastier rooms.
+func _spawn_props(tdata: Dictionary, placed: Array) -> void:
+	if _boss_room:
+		return
+	var crates := int(tdata.get("crates", -1))
+	if crates < 0:
+		crates = randi() % 3 if depth >= 2 else 0
+	for i in crates:
+		var crate := DungeonCrate.new()
+		crate.position = _find_spot(26.0, placed)
+		props.add_child(crate)
+
+	var rich := bool(tdata.get("rich", false))
+	if rich or (depth >= 2 and randf() < 0.25):
+		var wreck := DungeonWreck.new()
+		wreck.position = _find_spot(46.0, placed)
+		props.add_child(wreck)
+	if rich:
+		for i in 3:
+			var crate := DungeonCrate.new()
+			crate.position = _find_spot(26.0, placed)
+			props.add_child(crate)
+		_drop_pickup(WeaponDB.roll_weapon(2 + mini(depth / 4, 3)), -2,
+				_find_spot(PICKUP_RADIUS, placed))
+
+	var mines := int(tdata.get("mines", -1))
+	if mines < 0:
+		mines = 2 + randi() % 3 if depth >= 5 and randf() < 0.3 else 0
+	else:
+		mines += randi() % 3
+	for i in mines:
+		var mine := DungeonMine.new()
+		mine.position = _find_spot(20.0, placed)
+		props.add_child(mine)
+
+
 func _find_spot(radius: float, placed: Array, near := Vector2.INF, within := 0.0) -> Vector2:
 	var margin := WALL_MARGIN + radius
 	var area := _room_rect.grow(-margin)
@@ -320,6 +508,8 @@ func _find_spot(radius: float, placed: Array, near := Vector2.INF, within := 0.0
 			randf_range(area.position.x, area.end.x),
 			randf_range(area.position.y, area.end.y))
 		if near != Vector2.INF and pos.distance_to(near) > within:
+			continue
+		if _in_block(pos, radius + 20.0):
 			continue
 		var crowded := false
 		for q in placed:
@@ -338,13 +528,15 @@ func _find_spot(radius: float, placed: Array, near := Vector2.INF, within := 0.0
 
 # --- Enemy waves -------------------------------------------------------
 
-func _queue_enemies() -> void:
+func _queue_enemies(tdata: Dictionary) -> void:
 	if _boss_room:
 		_pulses = [[Kind.WARDEN]]
 		return
-	var roster := _roll_enemies(minf(3.2 + depth * 1.5, 26.0))
-	# Deeper rooms arrive in pulses so the fight breathes.
-	var pulse_count := 1 if depth <= 2 else (2 if depth <= 6 else 3)
+	var budget := minf(3.2 + depth * 1.5, 26.0) * float(tdata.get("budget_mult", 1.0))
+	var roster := _roll_enemies(budget, tdata.get("pool", null))
+	# Deeper rooms arrive in pulses so the fight breathes; ambushes
+	# come in fast close waves regardless.
+	var pulse_count := int(tdata.get("pulses", 1 if depth <= 2 else (2 if depth <= 6 else 3)))
 	pulse_count = mini(pulse_count, roster.size())
 	_pulses = []
 	var per := ceili(float(roster.size()) / pulse_count)
@@ -352,11 +544,14 @@ func _queue_enemies() -> void:
 		_pulses.append(roster.slice(i, i + per))
 
 
-func _roll_enemies(budget: float) -> Array:
+func _roll_enemies(budget: float, pool) -> Array:
 	var unlocked: Array = []
-	for kind in ENEMY_UNLOCK_DEPTH:
-		if depth >= int(ENEMY_UNLOCK_DEPTH[kind]):
-			unlocked.append(kind)
+	if pool != null:
+		unlocked = pool
+	else:
+		for kind in ENEMY_UNLOCK_DEPTH:
+			if depth >= int(ENEMY_UNLOCK_DEPTH[kind]):
+				unlocked.append(kind)
 	var roster: Array = []
 	var guard := 0
 	while budget > 0.0 and guard < 60:
@@ -383,11 +578,14 @@ func _spawn_pulse(pulse: Array) -> void:
 
 func _enemy_spot(avoid: Vector2) -> Vector2:
 	var area := _room_rect.grow(-150.0)
+	var min_dist := 320.0 if _close_spawns else 430.0
 	for attempt in 40:
 		var pos := Vector2(
 			randf_range(area.position.x, area.end.x),
 			randf_range(area.position.y, area.end.y))
-		if pos.distance_to(avoid) < 430.0:
+		if pos.distance_to(avoid) < min_dist:
+			continue
+		if _in_block(pos, 40.0):
 			continue
 		var blocked := false
 		for rock in asteroids.get_children():
@@ -428,7 +626,7 @@ func _spawn_enemy_now(kind: int, pos: Vector2) -> void:
 		e.hp_mult = 1.0 + depth * 0.25
 		Juice.slowmo(0.5, 0.7)
 	else:
-		e.hp_mult = 1.0 + 0.07 * (depth - 1)
+		e.hp_mult = (1.0 + 0.07 * (depth - 1)) * float(THEMES[_theme].get("hp_mult", 1.0))
 	e.position = pos
 	e.died.connect(_on_enemy_died)
 	enemies.add_child(e)
@@ -487,10 +685,14 @@ func _check_clear() -> void:
 
 func _room_cleared() -> void:
 	room_clear = true
-	# Tech caches (and every boss) pay out a perk; gates open after the
-	# choice is made so you can't drift through mid-decision.
+	var p := _player()
+	# Tech caches (and every boss) pay out a full perk; ordinary clears
+	# sometimes offer a small field upgrade. Gates open after the choice
+	# is made so you can't drift through mid-decision.
 	if _entry_reward == Reward.TECH or _entry_reward == Reward.BOSS:
-		dungeon_hud.open_perk_choice(DungeonPerks.roll(3))
+		dungeon_hud.open_perk_choice(DungeonPerks.roll(3, p))
+	elif depth >= 2 and randf() < MINOR_UPGRADE_CHANCE:
+		dungeon_hud.open_perk_choice(DungeonPerks.roll_minor(2, p))
 	else:
 		_unlock_doors()
 
@@ -506,7 +708,7 @@ func _on_perk_chosen(id: int) -> void:
 func _unlock_doors() -> void:
 	for door in doors.get_children():
 		door.unlock()
-	_set_banner("ROOM CLEAR — PICK A GATE", Color(1.0, 0.62, 0.1), 2.2)
+	_set_banner("ROOM CLEAR - PICK A GATE", Color(1.0, 0.62, 0.1), 2.2)
 
 
 # --- Gates -------------------------------------------------------------
@@ -567,7 +769,7 @@ func report_death(_victim_key: int, _attacker_key: int) -> void:
 	_set_banner("", Color.WHITE, 0.0)
 
 
-# Deaths always eliminate in the dungeon — there are no respawns, the
+# Deaths always eliminate in the dungeon; there are no respawns, the
 # game-over overlay takes it from here.
 func round_fight_active() -> bool:
 	return true
@@ -647,8 +849,8 @@ func _save_best() -> void:
 	cfg.save(SAVE_PATH)
 
 
-# Pulsing warning ring where an enemy is about to arrive, so spawns
-# never feel like ambushes.
+# Warning ring where an enemy is about to arrive, so spawns never feel
+# like ambushes (except in the rooms that are supposed to be one).
 class SpawnMarker extends Node2D:
 	signal done
 

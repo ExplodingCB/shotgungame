@@ -5,7 +5,10 @@
 class_name DungeonEnemy
 extends CharacterBody2D
 
-enum Kind { DRIFTER, GUNNER, SWARMLING, CHARGER, TURRET, SPLITTER, WARDEN }
+enum Kind {
+	DRIFTER, GUNNER, SWARMLING, CHARGER, TURRET, SPLITTER, WARDEN,
+	KAMIKAZE, BOMBER, SNIPER, MINELAYER,
+}
 enum State { CRUISE, WINDUP, DASH, RECOVER }
 
 signal died(kind: int, at: Vector2, killer_id: int)
@@ -44,6 +47,22 @@ const DATA := {
 		"texture": BEHOLDER, "tint": Color(0.85, 0.55, 1.0), "scale": 4.2, "sprite_rot": 0.0,
 		"radius": 52.0, "health": 300.0, "speed": 170.0, "accel": 200.0, "contact": 24.0,
 	},
+	Kind.KAMIKAZE: {  # rushes in and self-destructs; pop it from range
+		"texture": BEHOLDER, "tint": Color(1.0, 0.6, 0.2), "scale": 1.1, "sprite_rot": 0.0,
+		"radius": 14.0, "health": 18.0, "speed": 380.0, "accel": 560.0, "contact": 8.0,
+	},
+	Kind.BOMBER: {  # lobs explosive shells from a wide orbit
+		"texture": EMISSARY, "tint": Color(1.0, 0.75, 0.35), "scale": 1.8, "sprite_rot": PI / 2.0,
+		"radius": 24.0, "health": 80.0, "speed": 160.0, "accel": 200.0, "contact": 12.0,
+	},
+	Kind.SNIPER: {  # hangs far back; a warning line, then an instant beam
+		"texture": EMISSARY, "tint": Color(0.8, 0.7, 1.0), "scale": 1.6, "sprite_rot": PI / 2.0,
+		"radius": 20.0, "health": 45.0, "speed": 230.0, "accel": 280.0, "contact": 10.0,
+	},
+	Kind.MINELAYER: {  # fast strafer that seeds proximity mines
+		"texture": BEHOLDER, "tint": Color(0.4, 0.9, 0.85), "scale": 1.6, "sprite_rot": 0.0,
+		"radius": 20.0, "health": 60.0, "speed": 210.0, "accel": 260.0, "contact": 12.0,
+	},
 }
 
 const RAM_COOLDOWN := 0.9
@@ -61,6 +80,21 @@ const CHARGE_COOLDOWN := 3.0
 const WARDEN_ORBIT := 480.0
 const WARDEN_ATTACK_GAP := 2.6
 const HIT_KNOCKBACK := 3.0
+const KAMIKAZE_TRIGGER := 120.0
+const KAMIKAZE_FUSE := 0.45
+const KAMIKAZE_BLAST_RADIUS := 130.0
+const KAMIKAZE_BLAST_DAMAGE := 26.0
+const BOMBER_ORBIT := 620.0
+const BOMBER_RANGE := 950.0
+const BOMBER_INTERVAL := 2.6
+const SNIPER_ORBIT := 900.0
+const SNIPER_RANGE := 1400.0
+const SNIPER_INTERVAL := 3.2
+const SNIPER_AIM_TIME := 0.7
+const SNIPER_DAMAGE := 16.0
+const MINELAYER_ORBIT := 520.0
+const MINELAYER_INTERVAL := 3.5
+const MAX_FIELD_MINES := 8
 
 var kind: int = Kind.DRIFTER
 var hp_mult := 1.0
@@ -79,6 +113,9 @@ var _state_t := 0.0
 var _dash_dir := Vector2.RIGHT
 var _charge_cd := randf_range(0.6, 1.6)
 var _enraged := false
+var _fuse := -1.0           # kamikaze: >= 0 once armed
+var _aim_t := -1.0          # sniper: >= 0 while drawing a bead
+var _aim_point := Vector2.ZERO
 
 @onready var sprite: Sprite2D = $Sprite2D
 @onready var shape: CollisionShape2D = $CollisionShape2D
@@ -156,6 +193,36 @@ func _think(target: Node2D, delta: float) -> Vector2:
 			desired = _warden_brain(to_target, delta)
 			if _state == State.DASH:
 				face = _dash_dir.angle()
+
+		Kind.KAMIKAZE:
+			if _fuse >= 0.0:
+				_fuse -= delta
+				if _fuse <= 0.0:
+					take_damage(99999.0, Vector2.ZERO, global_position, 0)
+					return Vector2.ZERO
+				desired = to_target.normalized() * _speed * 0.4
+			else:
+				desired = to_target.normalized() * _speed
+				if to_target.length() < KAMIKAZE_TRIGGER:
+					_fuse = KAMIKAZE_FUSE
+					_windup_flash()
+
+		Kind.BOMBER:
+			desired = _orbit(to_target, BOMBER_ORBIT, 0.5)
+			_fire_cd -= delta
+			if _fire_cd <= 0.0 and to_target.length() < BOMBER_RANGE:
+				_fire_cd = BOMBER_INTERVAL
+				_lob(to_target.normalized())
+
+		Kind.SNIPER:
+			desired = _sniper_brain(to_target, delta)
+
+		Kind.MINELAYER:
+			desired = _orbit(to_target, MINELAYER_ORBIT, 0.7)
+			_fire_cd -= delta
+			if _fire_cd <= 0.0:
+				_fire_cd = MINELAYER_INTERVAL
+				_lay_mine()
 
 	if _state != State.WINDUP:
 		rotation = lerp_angle(rotation, face, 6.0 * delta)
@@ -292,6 +359,97 @@ func _nearest_player() -> Node2D:
 	return best
 
 
+# Sniper cycle: hold way out, then stop, draw a visible bead on the
+# player (tracking at first, locked near the end), and cut an instant
+# beam. Rocks and hull blocks break the shot, so cover works.
+func _sniper_brain(to_target: Vector2, delta: float) -> Vector2:
+	if _aim_t >= 0.0:
+		_aim_t -= delta
+		if _aim_t > SNIPER_AIM_TIME * 0.35:
+			_aim_point = global_position + to_target
+		queue_redraw()
+		if _aim_t <= 0.0:
+			_fire_beam(global_position.direction_to(_aim_point))
+			_fire_cd = SNIPER_INTERVAL
+		return Vector2.ZERO
+	_fire_cd -= delta
+	if _fire_cd <= 0.0 and to_target.length() < SNIPER_RANGE:
+		_aim_t = SNIPER_AIM_TIME
+		_aim_point = global_position + to_target
+	return _orbit(to_target, SNIPER_ORBIT, 0.35)
+
+
+func _fire_beam(dir: Vector2) -> void:
+	var from := global_position + dir * (float(DATA[kind]["radius"]) + 10.0)
+	var to := from + dir * SNIPER_RANGE
+	var query := PhysicsRayQueryParameters2D.create(from, to)
+	query.collision_mask = 3
+	var excl: Array[RID] = [get_rid()]
+	query.exclude = excl
+	var hit := get_world_2d().direct_space_state.intersect_ray(query)
+	if hit:
+		to = hit["position"]
+		var target: Object = hit["collider"]
+		if target != null and target.has_method("take_damage"):
+			target.take_damage(SNIPER_DAMAGE, dir, to, 0)
+	var beam := Line2D.new()
+	beam.points = PackedVector2Array([Vector2.ZERO, to - from])
+	beam.width = 4.0
+	beam.default_color = Color(0.8, 0.7, 1.0)
+	beam.position = from
+	get_tree().current_scene.add_child(beam)
+	beam.reset_physics_interpolation()
+	var tween := beam.create_tween()
+	tween.tween_property(beam, "modulate:a", 0.0, 0.25)
+	tween.tween_callback(beam.queue_free)
+	queue_redraw()
+
+
+func _lay_mine() -> void:
+	var main := get_tree().current_scene
+	var holder := main.get_node_or_null("Props") if main != null else null
+	if holder == null:
+		return
+	var mines := 0
+	for c in holder.get_children():
+		if c is DungeonMine and not c.is_queued_for_deletion():
+			mines += 1
+	if mines >= MAX_FIELD_MINES:
+		return
+	var mine := DungeonMine.new()
+	mine.position = global_position - velocity.normalized() * 40.0 \
+			if velocity != Vector2.ZERO else global_position
+	holder.add_child(mine)
+
+
+# Explosive shell: slow, fat, and detonating on impact or fuse end.
+func _lob(dir: Vector2) -> void:
+	var p := PROJECTILE_SCENE.instantiate()
+	var excl: Array[RID] = [get_rid()]
+	p.velocity = dir.rotated(randf_range(-0.05, 0.05)) * 400.0
+	p.damage = 10.0
+	p.lifetime = 1.7
+	p.damping = 150.0
+	p.modulate = Color(1.0, 0.6, 0.2)
+	p.scale = Vector2.ONE * 2.0
+	p.explode_radius = 110.0
+	p.explode_damage = 20.0
+	p.exclude = excl
+	p.position = global_position + dir * (float(DATA[kind]["radius"]) + 14.0)
+	get_tree().current_scene.add_child(p)
+	p.reset_physics_interpolation()
+
+
+# Only the sniper draws anything itself: the warning bead while aiming.
+func _draw() -> void:
+	if kind != Kind.SNIPER or _aim_t < 0.0:
+		return
+	draw_set_transform_matrix(get_global_transform().affine_inverse())
+	var a := 0.25 + 0.5 * (1.0 - _aim_t / SNIPER_AIM_TIME)
+	draw_line(global_position, _aim_point, Color(0.8, 0.7, 1.0, a), 2.0)
+	draw_set_transform_matrix(Transform2D())
+
+
 func _shoot(dir: Vector2, speed: float, dmg: float, life: float, color: Color) -> void:
 	var p := PROJECTILE_SCENE.instantiate()
 	var excl: Array[RID] = [get_rid()]
@@ -335,5 +493,10 @@ func take_damage(amount: float, dir: Vector2, _at: Vector2, attacker_id := 0) ->
 		fx.position = global_position
 		get_tree().current_scene.add_child(fx)
 		fx.reset_physics_interpolation()
+		if kind == Kind.KAMIKAZE:
+			# Dies as a bomb whether it reached you or got shot down;
+			# whoever set it off gets credit for the blast's kills.
+			Explosions.blast(self, global_position, KAMIKAZE_BLAST_RADIUS,
+					KAMIKAZE_BLAST_DAMAGE, attacker_id, true, self)
 		died.emit(kind, global_position, attacker_id)
 		queue_free()

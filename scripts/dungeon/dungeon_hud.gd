@@ -243,7 +243,7 @@ func _build_gameover() -> void:
 		box.add_child(best)
 
 	var hint := _label(15, TEXT_DIM)
-	hint.text = "ENTER — dive again      ESC — menu"
+	hint.text = "ENTER - dive again      ESC - menu"
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(hint)
 

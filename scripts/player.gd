@@ -61,6 +61,10 @@ var damage_mult := 1.0
 var extra_pellets := 0
 var incoming_mult := 1.0
 var explode_mult := 1.0
+# Dungeon AUX RACK upgrade: a second big-gun slot. Stays false (and
+# out of every flow) in versus play.
+var second_slot := false
+var primary_b: int = -1
 
 # Which physical device steers this body (see PlayerInput). Couch mode
 # spawns several locally-controlled players, each bound to one device.
@@ -146,6 +150,9 @@ func _unhandled_input(event: InputEvent) -> void:
 					_switch_weapon(primary)
 			KEY_2:
 				_switch_weapon(Weapon.PISTOL)
+			KEY_3:
+				if primary_b >= 0:
+					_switch_weapon(primary_b)
 
 
 func _physics_process(delta: float) -> void:
@@ -238,7 +245,10 @@ func _add_shake(amount: float) -> void:
 func give_weapon(id: int, amount: int) -> void:
 	if id == Weapon.PISTOL:
 		return
-	primary = id
+	if _fills_slot_b(id):
+		primary_b = id
+	else:
+		primary = id
 	ammo[id] = amount
 	weapon = id
 	_suppress_switch_snd = true
@@ -246,16 +256,34 @@ func give_weapon(id: int, amount: int) -> void:
 	_play_fx(SND_RACK)
 
 
-# Throws the primary toward `aim`; it sails off as a pickup that keeps
-# its remaining ammo. You're left with the trusty infinite pistol.
+# AUX RACK routing: a grab lands in the second slot when it's the free
+# one, or when the second slot's gun is what's being replaced. Both
+# ends of the pickup handshake (_try_pickup deciding the drop, this
+# deciding the slot) apply the same rule, so they always agree.
+func _fills_slot_b(id: int) -> bool:
+	if id == primary:
+		return false
+	if primary_b >= 0 and (id == primary_b or weapon == primary_b):
+		return true
+	return second_slot and primary >= 0 and primary_b < 0
+
+
+# Throws the wielded big gun (or the filled slot, when holding the
+# pistol) toward `aim`; it sails off as a pickup that keeps its
+# remaining ammo. You're left with the trusty infinite pistol.
 func throw_weapon(aim: Vector2) -> void:
-	if primary < 0:
+	var from_b: bool = primary_b >= 0 and (weapon == primary_b or primary < 0)
+	var kind := primary_b if from_b else primary
+	if kind < 0:
 		return
 	if aim == Vector2.ZERO:
 		aim = Vector2.RIGHT
-	_net_throw.rpc_id(1, primary, int(ammo[primary]), aim)
-	ammo[primary] = 0
-	primary = -1
+	_net_throw.rpc_id(1, kind, int(ammo[kind]), aim)
+	ammo[kind] = 0
+	if from_b:
+		primary_b = -1
+	else:
+		primary = -1
 	if weapon != Weapon.PISTOL:
 		_switch_weapon(Weapon.PISTOL)
 	_play_fx(SND_SWITCH)
@@ -265,8 +293,13 @@ func _try_pickup() -> void:
 	var target := _nearest_pickup()
 	if target == null:
 		return
-	var drop_ammo := int(ammo[primary]) if primary >= 0 else 0
-	_net_request_pickup.rpc_id(1, str(target.name), primary, drop_ammo)
+	# Whatever slot the new gun will land in is the one whose old gun
+	# drops; with the AUX RACK and a free slot, nothing drops at all.
+	var drop_kind := primary
+	if _fills_slot_b(int(target.kind)):
+		drop_kind = primary_b
+	var drop_ammo := int(ammo[drop_kind]) if drop_kind >= 0 else 0
+	_net_request_pickup.rpc_id(1, str(target.name), drop_kind, drop_ammo)
 
 
 func _nearest_pickup() -> Node2D:
@@ -418,23 +451,30 @@ func reset_loadout() -> void:
 	ammo[Weapon.SHOTGUN] = START_SHELLS
 	ammo[Weapon.PISTOL] = -1
 	primary = Weapon.SHOTGUN
+	primary_b = -1
 	weapon = Weapon.SHOTGUN
 	_cooldown = 0.0
 	_suppress_switch_snd = true
 	_apply_weapon()
 
 
+# Cycles through what's carried: primary, pistol, and (with the AUX
+# RACK) the second slot. With one big gun this is the classic toggle.
 func _toggle_weapon() -> void:
-	if weapon == Weapon.PISTOL and primary >= 0:
-		_switch_weapon(primary)
-	else:
-		_switch_weapon(Weapon.PISTOL)
+	var order: Array = []
+	if primary >= 0:
+		order.append(primary)
+	order.append(Weapon.PISTOL)
+	if primary_b >= 0:
+		order.append(primary_b)
+	var idx := order.find(weapon)
+	_switch_weapon(order[(idx + 1) % order.size()])
 
 
 func _switch_weapon(to: int) -> void:
 	if weapon == to:
 		return
-	if to != Weapon.PISTOL and to != primary:
+	if to != Weapon.PISTOL and to != primary and to != primary_b:
 		return
 	weapon = to
 	_apply_weapon()

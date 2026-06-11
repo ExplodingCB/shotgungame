@@ -45,6 +45,8 @@ script = ExtResource("1_backdrop")
 
 [node name="Drops" type="Node2D" parent="."]
 
+[node name="Props" type="Node2D" parent="."]
+
 [node name="Doors" type="Node2D" parent="."]
 
 [node name="HUD" type="CanvasLayer" parent="."]

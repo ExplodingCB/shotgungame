@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "godot": {
+      "command": "node",
+      "args": ["C:/Users/kelle/OneDrive/Documents/GitHub/shotgungame/addons/godot-mcp-enhanced/build/index.js"],
+      "env": {
+        "GODOT_PATH": "C:/Program Files (x86)/Steam/steamapps/common/Godot Engine/godot.windows.opt.tools.64.exe",
+        "GODOT_MCP_NO_DASHBOARD": "1",
+        "ALLOWED_PROJECT_PATHS": "C:/Users/kelle/OneDrive/Documents/GitHub/shotgungame",
+        "DEBUG": "true"
+      },
+      "autoApprove": [
+        "launch_editor", "run_project", "stop_project",
+        "get_debug_output", "capture_screenshot", "run_tests",
+        "get_godot_version", "list_projects", "get_project_info",
+        "list_files", "read_project_config",
+        "read_scene", "create_scene", "add_node", "save_scene", "load_sprite",
+        "read_script", "write_script",
+        "execute_gdscript", "query_scene_tree", "inspect_node",
+        "batch_add_nodes", "validate_project", "import_resources",
+        "run_and_verify", "analyze_error", "edit_script"
+      ]
+    }
+  }
+}

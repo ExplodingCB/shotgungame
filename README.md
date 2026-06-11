@@ -36,7 +36,7 @@ Picked-up weapons replace your shotgun; when they run dry they break and the sho
 
 ## Singleplayer
 
-- **Dungeon Dive** — a roguelite run through procedurally generated chambers. Clear each room, then fly into one of the exit gates: **Armory** (high-tier guns), **Repair Bay** (hull), or **Tech Cache** (pick a stacking perk). New enemy types unlock as you go deeper, supply drops keep you fed, and every 5th room holds the Warden. Death ends the run; depth is your score.
+- **Dungeon Dive** — a roguelite run through procedurally generated chambers. Rooms roll an identity (swarm dens, ambushes, minefields, vaults, sniper nests) and a layout carved by interior hull blocks. Clear each room, then fly into one of the exit gates: **Armory** (high-tier guns), **Repair Bay** (hull), or **Tech Cache** (pick a stacking perk); ordinary clears sometimes offer a small field upgrade, and the rare AUX RACK lets you carry two big guns. Eleven enemy types unlock as you go deeper, crates and wrecks crack open for loot, proximity mines guard the worst rooms, and every 5th chamber holds the Warden. Death ends the run; depth is your score.
 - **Arena Waves** — the classic survival mode: endless waves of enemy ships in the open arena.
 
 ## Multiplayer (2+ players)
