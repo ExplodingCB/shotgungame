@@ -22,6 +22,7 @@ const TICK := 0.25
 const WIDTH := 10.0
 const TOUCH := 24.0  # half-width counted as a hit: beam glow + ship hull
 const REHIT := 0.35  # per-player cooldown so a burn isn't applied every frame
+const MAX_FRAME_HOP := 320.0  # farther than any flown frame: a warp, not a path
 
 var _t := 0.0
 var _tick := 0.0
@@ -57,6 +58,12 @@ func _sweep_players(delta: float, lethal: bool) -> void:
 		var cur: Vector2 = to_local(p.global_position)
 		var prev: Vector2 = _prev.get(id, cur)
 		_prev[id] = cur
+		# Portal hops, respawns, and network warps move a ship much
+		# farther in one frame than flying ever could. No path was flown
+		# across the arena, so nothing crossed the beam — only genuine
+		# contact at the new spot counts.
+		if prev.distance_to(cur) > MAX_FRAME_HOP:
+			prev = cur
 		var cd: float = maxf(float(_burnt.get(id, 0.0)) - delta, 0.0)
 		_burnt[id] = cd
 		if not lethal or not p.visible or cd > 0.0:

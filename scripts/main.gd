@@ -57,6 +57,7 @@ const PICKUP_RADIUS := 20.0
 @onready var pickup_spawner: MultiplayerSpawner = $PickupSpawner
 @onready var stars_far: Sprite2D = $StarsFar/Sprite
 @onready var stars_near: Sprite2D = $StarsNear/Sprite
+@onready var hud: Control = $HUD/Hud
 
 var _player_count := 0
 var wave := 0
@@ -69,6 +70,14 @@ var _wave_pending := false
 var scores := {}
 
 var round_manager: Node = null
+
+# Online death view (see set_spectating).
+var spectator: SpectatorCamera = null
+
+# Joins replicate as player spawns, so a "joined" feed line only makes
+# sense once the initial batch (our own ship, everyone already here)
+# has landed; this flips on shortly after the scene starts.
+var _join_notices := false
 
 
 func _ready() -> void:
@@ -100,6 +109,14 @@ func _ready() -> void:
 	multiplayer.connection_failed.connect(_leave)
 	multiplayer.server_disconnected.connect(_leave)
 	Net.setup_peer()
+
+	if Net.mode == Net.Mode.HOST or Net.mode == Net.Mode.JOIN:
+		var join_gate := Timer.new()
+		join_gate.one_shot = true
+		join_gate.wait_time = 2.0
+		join_gate.timeout.connect(func(): _join_notices = true)
+		add_child(join_gate)
+		join_gate.start()
 
 	# Solo counts as the server; clients receive everything replicated.
 	if multiplayer.is_server():
@@ -137,6 +154,12 @@ func _on_peer_connected(id: int) -> void:
 
 
 func _on_peer_disconnected(id: int) -> void:
+	# Every machine hears the disconnect, so each posts its own notice.
+	if players.has_node(str(id)):
+		var gone: Node = players.get_node(str(id))
+		var colors: Array = preload("res://scripts/player.gd").COLORS
+		hud.notify("P%d left the game" % (int(gone.slot) + 1),
+				colors[int(gone.color_idx) % colors.size()])
 	if multiplayer.is_server():
 		if players.has_node(str(id)):
 			players.get_node(str(id)).queue_free()
@@ -174,6 +197,59 @@ func round_fight_active() -> bool:
 	return round_manager != null and round_manager.fight_active()
 
 
+# Eliminated online players ride the spectator camera until the next
+# revive hands their own camera back (see player._apply_dead_state).
+func set_spectating(on: bool, from: Vector2) -> void:
+	if not on:
+		if spectator != null:
+			spectator.enabled = false
+		return
+	if spectator == null:
+		spectator = SpectatorCamera.new()
+		spectator.name = "SpectatorCamera"
+		add_child(spectator)
+	spectator.target = null
+	spectator.global_position = from
+	spectator.reset_physics_interpolation()
+	spectator.enabled = true
+	spectator.make_current()
+
+
+# Who the death view is watching right now; the HUD names them.
+func spectate_target() -> Node2D:
+	if spectator != null and spectator.enabled:
+		return spectator.target
+	return null
+
+
+# Every peer hears about every death: a feed line for the room, plus a
+# YOU DIED flash on the machine whose ship went down. Round
+# eliminations skip the flash — the persistent spectate label takes over.
+@rpc("any_peer", "call_local", "reliable")
+func _net_death_msg(victim_slot: int, victim_color: int, attacker_key: int) -> void:
+	var colors: Array = preload("res://scripts/player.gd").COLORS
+	var victim_name := "P%d" % (victim_slot + 1)
+	var attacker: Node = _player_by_key(attacker_key)
+	if attacker != null and int(attacker.slot) != victim_slot:
+		hud.notify("P%d destroyed %s" % [int(attacker.slot) + 1, victim_name],
+				colors[int(attacker.color_idx) % colors.size()])
+	else:
+		hud.notify("%s died" % victim_name, colors[victim_color % colors.size()])
+	if Net.mode == Net.Mode.LOCAL:
+		return  # shared screen: the explosion already tells everyone
+	for p in players.get_children():
+		if int(p.slot) == victim_slot and p.is_locally_controlled() \
+				and not round_fight_active():
+			hud.flash_death("YOU DIED")
+
+
+func _player_by_key(key: int) -> Node:
+	for p in players.get_children():
+		if p.fighter_key() == key:
+			return p
+	return null
+
+
 @rpc("authority", "call_local", "reliable")
 func _sync_scores(s: Dictionary) -> void:
 	scores = s
@@ -184,7 +260,7 @@ func _leave() -> void:
 
 
 func _add_player(id: int) -> void:
-	player_spawner.spawn([id, _player_count])
+	player_spawner.spawn([id, _player_count, _free_color(_player_count)])
 	_player_count += 1
 
 
@@ -192,19 +268,39 @@ func _add_player(id: int) -> void:
 # authority. Non-numeric names keep authority at 1 (see player.gd).
 func _add_local_players() -> void:
 	for i in Net.local_roster.size():
-		player_spawner.spawn(["local_%d" % i, i, Net.local_roster[i]])
+		player_spawner.spawn(["local_%d" % i, i, i, Net.local_roster[i]])
 	_player_count = Net.local_roster.size()
 
 
+# Spawn paint: the slot's classic color when nobody wears it, else the
+# first free one (earlier joiners may have picked custom colors).
+func _free_color(slot: int) -> int:
+	var n: int = preload("res://scripts/player.gd").COLORS.size()
+	var used := {}
+	for p in players.get_children():
+		used[int(p.color_idx)] = true
+	if not used.has(slot % n):
+		return slot % n
+	for i in n:
+		if not used.has(i):
+			return i
+	return slot % n
+
+
+# data: [name, slot, color, device?] — device only rides couch spawns.
 func _spawn_player(data: Variant) -> Node:
 	var p := PLAYER_SCENE.instantiate()
 	p.name = str(data[0])
-	p.color_idx = data[1]
 	p.slot = data[1]
-	if data.size() > 2:
-		p.device = data[2]
+	p.color_idx = data[2] if data.size() > 2 else data[1]
+	if data.size() > 3:
+		p.device = data[3]
 	var spawns: Array = level_host.spawns
 	p.position = spawns[data[1] % spawns.size()]
+	if _join_notices:
+		var colors: Array = preload("res://scripts/player.gd").COLORS
+		hud.notify("P%d joined the game" % (int(data[1]) + 1),
+				colors[int(p.color_idx) % colors.size()])
 	return p
 
 
@@ -435,6 +531,12 @@ func spawn_break_fx(pos: Vector2, fx_scale: float, with_boom := false) -> void:
 	if with_boom:
 		Explosions.boom(self, pos)
 		add_shake(8.0)
+		# The server's blast already shoved everything it simulates;
+		# clients ride the fx broadcast to push their own ships.
+		if not multiplayer.is_server():
+			Explosions.shockwave(self, pos,
+					fx_scale * 70.0 * Explosions.WAVE_RADIUS_MULT,
+					30.0 * Explosions.WAVE_PUSH)
 
 
 func _find_spot(radius: float, placed: Array) -> Vector2:

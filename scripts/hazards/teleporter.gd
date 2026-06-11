@@ -45,6 +45,7 @@ func _try_send(p: Node2D, twin: Teleporter) -> void:
 	var speed: float = maxf(p.velocity.length(), MIN_EXIT_SPEED)
 	p.global_position = twin.global_position
 	p.velocity = twin.global_transform.x.normalized() * speed
+	p.reset_physics_interpolation()
 	twin._cooldowns[key] = COOLDOWN
 	if p.has_method("_add_shake"):
 		p._add_shake(5.0)

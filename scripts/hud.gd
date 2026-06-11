@@ -20,6 +20,13 @@ var _local_box: HBoxContainer
 var _local_rows := {}  # player node name -> row widgets
 var _round_banner: Label
 
+# Event feed (joins, leaves, kills) under the host info line, plus the
+# big center death text: a YOU DIED flash on warm-up deaths, or the
+# persistent ELIMINATED/spectate label while sitting out a round.
+var _feed_box: VBoxContainer
+var _death_label: Label
+var _death_flash := 0.0  # seconds left on a transient flash
+
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -33,6 +40,9 @@ func _ready() -> void:
 	_build_wave_label()
 	_build_host_info()
 	_build_scoreboard()
+	_build_feed()
+	if Net.mode != Net.Mode.LOCAL:
+		_build_death_label()
 
 
 # Big center label for round flow: countdown, FIGHT!, winner flashes.
@@ -95,6 +105,86 @@ func _exit_tree() -> void:
 		Net.host_info_changed.disconnect(_update_host_info)
 
 
+# --- Event feed and death text ---------------------------------------
+
+func _build_feed() -> void:
+	_feed_box = VBoxContainer.new()
+	_feed_box.position = Vector2(28, 54)
+	_feed_box.add_theme_constant_override("separation", 2)
+	add_child(_feed_box)
+
+
+# Posts a fading line to the event feed: joins, leaves, kills.
+func notify(text: String, color: Color = TEXT_BRIGHT) -> void:
+	while _feed_box.get_child_count() >= 6:
+		_feed_box.get_child(0).free()
+	var lbl := Label.new()
+	lbl.text = text
+	lbl.add_theme_font_size_override("font_size", 17)
+	lbl.add_theme_color_override("font_color", color)
+	lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	lbl.add_theme_constant_override("outline_size", 4)
+	_feed_box.add_child(lbl)
+	var tween := lbl.create_tween()
+	tween.tween_interval(3.4)
+	tween.tween_property(lbl, "modulate:a", 0.0, 0.9)
+	tween.tween_callback(lbl.queue_free)
+
+
+func _build_death_label() -> void:
+	_death_label = Label.new()
+	_death_label.visible = false
+	_death_label.anchor_left = 0.5
+	_death_label.anchor_right = 0.5
+	_death_label.offset_left = -500.0
+	_death_label.offset_right = 500.0
+	_death_label.offset_top = 252.0
+	_death_label.offset_bottom = 360.0
+	_death_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var bf := FontVariation.new()
+	bf.base_font = ThemeDB.fallback_font
+	bf.set_spacing(TextServer.SPACING_GLYPH, 6)
+	bf.variation_embolden = 0.7
+	_death_label.add_theme_font_override("font", bf)
+	_death_label.add_theme_font_size_override("font_size", 32)
+	_death_label.add_theme_color_override("font_color", ALERT)
+	_death_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	_death_label.add_theme_constant_override("outline_size", 7)
+	add_child(_death_label)
+
+
+# Short center-screen flash for deaths that respawn (warm-up, solo).
+func flash_death(text: String) -> void:
+	if _death_label == null:
+		return
+	_death_label.text = text
+	_death_flash = 2.2
+
+
+# While the local ship sits out a round, the label stays up and names
+# whoever the spectator camera is riding; otherwise it runs the flash
+# timer down and hides.
+func _update_death_label(delta: float) -> void:
+	if player != null and is_instance_valid(player) and player._dead:
+		_death_flash = 0.0
+		_death_label.visible = true
+		_death_label.modulate.a = 1.0
+		var text := "ELIMINATED"
+		var main := get_tree().current_scene
+		if main != null and main.has_method("spectate_target"):
+			var t: Node2D = main.spectate_target()
+			if t != null:
+				text += "\nwatching P%d  —  click to switch" % (int(t.slot) + 1)
+		_death_label.text = text
+		return
+	if _death_flash > 0.0:
+		_death_flash -= delta
+		_death_label.visible = true
+		_death_label.modulate.a = clampf(_death_flash / 0.7, 0.0, 1.0)
+	else:
+		_death_label.visible = false
+
+
 func _build_wave_label() -> void:
 	_wave_label = Label.new()
 	_wave_label.visible = false
@@ -112,8 +202,10 @@ func _build_wave_label() -> void:
 	add_child(_wave_label)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	_update_scoreboard()
+	if _death_label != null:
+		_update_death_label(delta)
 	if Net.mode == Net.Mode.LOCAL:
 		# One shared camera shows everyone, so no off-screen arrows.
 		_update_local_panels()
@@ -253,7 +345,7 @@ func _update_scoreboard() -> void:
 			"kills": int(main.scores.get(p.fighter_key(), 0)),
 			"wins": int(rm.round_wins.get(p.fighter_key(), 0)) if rm != null else -1,
 			"color": p.COLORS[p.color_idx % p.COLORS.size()],
-			"num": int(p.color_idx) + 1,
+			"num": int(p.slot) + 1,
 		})
 	entries.sort_custom(func(a, b):
 		if a["wins"] != b["wins"]:

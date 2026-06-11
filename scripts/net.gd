@@ -26,6 +26,9 @@ var _upnp_thread: Thread = null
 var music_volume := 0.8
 var sfx_volume := 0.8
 
+# Menu-picked ship color (index into player COLORS); -1 = slot default.
+var preferred_color := -1
+
 
 func _ready() -> void:
 	# Dedicated buses so music and SFX volume are independent.
@@ -57,17 +60,24 @@ func _apply_bus(bus_name: String, v: float) -> void:
 	AudioServer.set_bus_volume_db(idx, linear_to_db(maxf(v, 0.001)))
 
 
+func set_preferred_color(idx: int) -> void:
+	preferred_color = idx
+	_save_settings()
+
+
 func _load_settings() -> void:
 	var cfg := ConfigFile.new()
 	if cfg.load(SETTINGS_PATH) == OK:
 		music_volume = cfg.get_value("audio", "music", 0.8)
 		sfx_volume = cfg.get_value("audio", "sfx", 0.8)
+		preferred_color = cfg.get_value("player", "color", -1)
 
 
 func _save_settings() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("audio", "music", music_volume)
 	cfg.set_value("audio", "sfx", sfx_volume)
+	cfg.set_value("player", "color", preferred_color)
 	cfg.save(SETTINGS_PATH)
 
 

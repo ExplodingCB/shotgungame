@@ -11,8 +11,10 @@ const ROCK_LARGE := preload("res://assets/asteroids/Asteroids_01_large.png")
 const ROCK_MEDIUM := preload("res://assets/asteroids/Asteroids_01_medium.png")
 const SHIP := preload("res://assets/spaceships/Beholder/Beholder.png")
 const MenuIcon := preload("res://scripts/menu_icon.gd")
+const PlayerScript := preload("res://scripts/player.gd")
 
 var _ip_edit: LineEdit
+var _swatches: Array[Button] = []
 var _rocks: Array[TextureRect] = []
 var _ship: TextureRect
 var _t := 0.0
@@ -182,10 +184,62 @@ func _build_center() -> void:
 	join_btn.pressed.connect(func(): Net.start_join(_ip_edit.text))
 	join_row.add_child(join_btn)
 
+	btns.add_child(_build_color_row())
+
 	btns.add_child(_menu_button("Quit", "power", func(): get_tree().quit()))
 
 	box.add_child(_vspace(40))
 	box.add_child(_ornament(140, true))
+
+
+# Ship color picker: one swatch per paint job. The pick is saved and
+# claimed from the server on spawn (first come keeps a contested
+# color). Clicking the active swatch goes back to your slot's default.
+func _build_color_row() -> Control:
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 9)
+	var lbl := Label.new()
+	lbl.text = "SHIP COLOR"
+	lbl.add_theme_font_size_override("font_size", 13)
+	lbl.add_theme_color_override("font_color", TEXT_DIM)
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(lbl)
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(8, 0)
+	row.add_child(gap)
+	for i in PlayerScript.COLORS.size():
+		var b := Button.new()
+		b.custom_minimum_size = Vector2(32, 32)
+		b.tooltip_text = "Fly this color (click again for auto)"
+		b.pressed.connect(func():
+			Net.set_preferred_color(-1 if Net.preferred_color == i else i)
+			_refresh_swatches())
+		row.add_child(b)
+		_swatches.append(b)
+	_refresh_swatches()
+	return row
+
+
+func _refresh_swatches() -> void:
+	for i in _swatches.size():
+		var sel: bool = Net.preferred_color == i
+		var color: Color = PlayerScript.COLORS[i]
+		var normal := _swatch_style(color, Color(0, 0, 0, 0.6), sel)
+		_swatches[i].add_theme_stylebox_override("normal", normal)
+		_swatches[i].add_theme_stylebox_override("pressed", normal)
+		_swatches[i].add_theme_stylebox_override("hover",
+				_swatch_style(color.lightened(0.15), Color(1, 1, 1, 0.65), sel))
+		_swatches[i].add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+
+
+func _swatch_style(bg: Color, idle_border: Color, sel: bool) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = bg
+	sb.set_corner_radius_all(8)
+	sb.set_border_width_all(3 if sel else 1)
+	sb.border_color = Color.WHITE if sel else idle_border
+	return sb
 
 
 func _menu_button(label: String, icon_kind: String, on_pressed: Callable) -> Button:

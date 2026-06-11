@@ -119,13 +119,21 @@ func _stage_pad_and_laser() -> void:
 	hp = b.health
 	laser._sweep_players(0.016, true)
 	_check(b.health == hp, "laser re-burned inside the cooldown window")
-	# Tunneling: a ship crossing the whole beam between two frames —
-	# faster than any tick could catch — still gets clipped.
+	# Tunneling: a ship crossing the beam between two frames — faster
+	# than any tick could catch, but still a flyable hop — gets clipped.
 	var c_hp: float = a.health
-	laser._prev[a.get_instance_id()] = laser.to_local(b.global_position + Vector2(0, -400))
-	a.global_position = b.global_position + Vector2(0, 400)
+	laser._prev[a.get_instance_id()] = laser.to_local(b.global_position + Vector2(0, -140))
+	a.global_position = b.global_position + Vector2(0, 140)
 	laser._sweep_players(0.016, true)
 	_check(a.health < c_hp, "laser missed a ship that crossed between frames (%s)" % c_hp)
+	# Warps: a portal hop (or respawn) across the beam is not a flown
+	# path — landing far on the other side must not burn.
+	laser._burnt.erase(a.get_instance_id())
+	c_hp = a.health
+	laser._prev[a.get_instance_id()] = laser.to_local(b.global_position + Vector2(0, -800))
+	a.global_position = b.global_position + Vector2(0, 800)
+	laser._sweep_players(0.016, true)
+	_check(a.health == c_hp, "laser burned a ship that warped across, not through (%s)" % c_hp)
 	laser.free()
 	_stage_teleporter(main, a)
 

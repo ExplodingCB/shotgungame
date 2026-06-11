@@ -17,6 +17,10 @@ const COLORS := [
 	Color(0.35, 0.8, 1.0),   # P2 cyan
 	Color(0.55, 1.0, 0.5),   # P3 green
 	Color(1.0, 0.5, 0.85),   # P4 pink
+	Color(1.0, 0.88, 0.25),  # yellow
+	Color(0.72, 0.45, 1.0),  # violet
+	Color(1.0, 0.32, 0.28),  # crimson
+	Color(0.93, 0.95, 1.0),  # white
 ]
 
 const MAX_HEALTH := 100.0
@@ -44,9 +48,11 @@ const BEAM_DAMAGE := 200.0
 const START_SHELLS := 8
 
 # Weapons are grabbed with E inside this radius and thrown with Q;
-# thrown guns keep whatever ammo they had.
+# thrown guns keep whatever ammo they had. Hurling one shoves you the
+# other way, so a throw doubles as an escape thruster.
 const GRAB_RADIUS := 220.0
 const THROW_SPEED := 420.0
+const THROW_RECOIL := 360.0
 
 # Frag grenades: a consumable lobbed with G (pad A) without leaving
 # your gun. Short fuse, a couple of bounces, then a hefty blast.
@@ -66,7 +72,13 @@ var weapon: int = Weapon.SHOTGUN
 var primary: int = Weapon.SHOTGUN  # the one big-gun slot; -1 = empty
 var ammo := {}
 var grenades := 0  # consumable count, found as packs in versus arenas
-var color_idx := 0
+# Paint job. Menu picks land after spawn and ride the synchronizer, so
+# the setter keeps the hull tint current on every peer.
+var color_idx := 0:
+	set(v):
+		color_idx = v
+		if body_sprite != null:
+			body_sprite.modulate = COLORS[color_idx % COLORS.size()]
 var health := MAX_HEALTH
 var max_health := MAX_HEALTH
 
@@ -85,7 +97,7 @@ var primary_b: int = -1
 # Which physical device steers this body (see PlayerInput). Couch mode
 # spawns several locally-controlled players, each bound to one device.
 var device := -2
-var slot := 0  # stable couch identity; mirrors color_idx
+var slot := 0  # stable couch identity; also the default paint pick
 var controls: PlayerInput = PlayerInput.new(-2)
 
 # Round play: eliminated players sit out until the next countdown, and
@@ -113,6 +125,7 @@ var _spin := 0.0
 var _shown_weapon := -1
 var _suppress_switch_snd := false
 var _muzzle_y := -5.0
+var _swing_tween: Tween = null
 
 
 func _init() -> void:
@@ -141,6 +154,11 @@ func _ready() -> void:
 		lh.level_loaded.connect(_apply_camera_limits)
 		_apply_camera_limits()
 	_apply_weapon()
+	# A menu-picked paint job: ask the server to hand it over. The server
+	# arbitrates clashes, so two ships never fly the same color.
+	if Net.mode != Net.Mode.LOCAL and Net.preferred_color >= 0 \
+			and is_locally_controlled():
+		_net_request_color.rpc_id(1, Net.preferred_color)
 
 
 # Pin the follow camera inside the active level so small arenas don't
@@ -319,6 +337,8 @@ func throw_weapon(aim: Vector2) -> void:
 	if aim == Vector2.ZERO:
 		aim = Vector2.RIGHT
 	_net_throw.rpc_id(1, kind, int(ammo[kind]), aim)
+	velocity -= aim.normalized() * THROW_RECOIL
+	_add_shake(4.0)
 	ammo[kind] = 0
 	if from_b:
 		primary_b = -1
@@ -454,6 +474,31 @@ func _net_receive_weapon(id: int, amount: int) -> void:
 	give_weapon(id, amount)
 
 
+# Paint handshake: the owner asks the server for its saved color, and
+# the server hands it over unless another fighter already wears it. The
+# grant lands on the owning peer, whose synchronizer fans the new
+# color_idx out to everyone (late joiners catch it via spawn state).
+@rpc("any_peer", "call_local", "reliable")
+func _net_request_color(wanted: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if sender > 1 and sender != get_multiplayer_authority():
+		return
+	wanted = clampi(wanted, 0, COLORS.size() - 1)
+	for p in get_tree().get_nodes_in_group("player"):
+		if p != self and int(p.color_idx) == wanted:
+			return  # taken: keep the color assigned at spawn
+	_net_grant_color.rpc_id(get_multiplayer_authority(), wanted)
+
+
+@rpc("any_peer", "call_local", "reliable")
+func _net_grant_color(idx: int) -> void:
+	if not is_multiplayer_authority() or multiplayer.get_remote_sender_id() > 1:
+		return
+	color_idx = idx
+
+
 @rpc("any_peer", "call_local", "reliable")
 func _net_throw(kind: int, amount: int, aim: Vector2) -> void:
 	if not multiplayer.is_server() \
@@ -535,6 +580,8 @@ func _apply_damage(amount: float, dir: Vector2, attacker_id := 0) -> void:
 			main._net_report_kill.rpc_id(1, attacker_id)
 		if main != null and main.has_method("_net_player_death_fx"):
 			main._net_player_death_fx.rpc(global_position, color_idx)
+		if main != null and main.has_method("_net_death_msg"):
+			main._net_death_msg.rpc(slot, color_idx, attacker_id)
 		Juice.hitstop(150)
 		Juice.rumble(device, 1.0, 1.0, 0.45)
 		if out_for_round:
@@ -575,6 +622,16 @@ func _apply_dead_state() -> void:
 	visible = not _dead
 	collision_layer = 0 if _dead else 2
 	collision_mask = 0 if _dead else 3
+	# Online play: an eliminated player's view hops to the spectator
+	# camera until revive() hands this one back.
+	if is_locally_controlled() \
+			and (Net.mode == Net.Mode.HOST or Net.mode == Net.Mode.JOIN):
+		var main := get_tree().current_scene
+		if main != null and main.has_method("set_spectating"):
+			main.set_spectating(_dead, global_position)
+		camera.enabled = not _dead
+		if not _dead:
+			camera.make_current()
 
 
 # Back to the starting kit between rounds: shotgun shells + the pistol.
@@ -619,6 +676,9 @@ func _apply_weapon() -> void:
 	gun_sprite.texture = data["texture"]
 	gun_sprite.position.x = data["sprite_x"]
 	gun_sprite.scale = Vector2.ONE * float(data["sprite_scale"])
+	if _swing_tween != null and _swing_tween.is_valid():
+		_swing_tween.kill()
+	gun_sprite.rotation = deg_to_rad(float(data.get("sprite_rot", 0.0)))
 	muzzle.position.x = data["muzzle_x"]
 	_muzzle_y = data["muzzle_y"]
 	_gun_rest_x = data["sprite_x"]
@@ -672,9 +732,12 @@ func _fire_fx(aim: Vector2, w: int) -> void:
 	match data.get("fire_mode", "pellets"):
 		"beam":
 			_fire_beam(aim, lethal)
+		"melee":
+			_swing_melee(aim, lethal, data)
 		_:
 			_spawn_projectiles(aim, data, lethal)
-	_puff_smoke(int(data["smoke"]), float(data["smoke_scale"]), aim)
+	if int(data["smoke"]) > 0:
+		_puff_smoke(int(data["smoke"]), float(data["smoke_scale"]), aim)
 	gun_sprite.position.x = _gun_rest_x - float(data["kick"])
 	var snd: AudioStream = data["sound"]
 	if shot_audio.stream != snd:
@@ -720,6 +783,45 @@ func _puff_smoke(amount: int, size: float, aim: Vector2) -> void:
 	puff.position = muzzle.global_position
 	get_tree().current_scene.add_child(puff)
 	puff.reset_physics_interpolation()
+
+
+# The Warhammer arc: every peer animates the sweep and checks the same
+# arc (positions are synced, so they agree within a frame), but only
+# the wielder's machine deals the one-shot and the detonation — the
+# same authority split as gunfire. Direct victims and the wielder are
+# exempt from the blast damage; everyone still rides the shockwave.
+func _swing_melee(aim: Vector2, lethal: bool, data: Dictionary) -> void:
+	var base := deg_to_rad(float(data.get("sprite_rot", 0.0)))
+	if _swing_tween != null and _swing_tween.is_valid():
+		_swing_tween.kill()
+	gun_sprite.rotation = base - 1.9
+	_swing_tween = gun_sprite.create_tween()
+	_swing_tween.tween_property(gun_sprite, "rotation", base + 0.7, 0.09)
+	_swing_tween.tween_property(gun_sprite, "rotation", base, 0.3)
+
+	var center := global_position + aim * float(data["melee_range"])
+	var shape := CircleShape2D.new()
+	shape.radius = float(data["melee_radius"])
+	var q := PhysicsShapeQueryParameters2D.new()
+	q.shape = shape
+	q.transform = Transform2D(0.0, center)
+	q.collision_mask = 3  # ships and rocks both crunch
+	var excl: Array[RID] = [get_rid()]
+	q.exclude = excl
+	var struck: Array = []
+	for h in get_world_2d().direct_space_state.intersect_shape(q, 8):
+		var c: Object = h["collider"]
+		if c is Node2D and not c is StaticBody2D and c.has_method("take_damage"):
+			struck.append(c)
+	if struck.is_empty():
+		return
+	if lethal:
+		for c in struck:
+			c.take_damage(float(data["damage"]) * damage_mult, aim,
+					(c as Node2D).global_position, fighter_key())
+	Explosions.blast(self, center, float(data["explode_radius"]) * explode_mult,
+			float(data["explode_damage"]) * damage_mult * explode_mult,
+			fighter_key(), lethal, struck + [self])
 
 
 func _fire_beam(aim: Vector2, lethal: bool) -> void:
