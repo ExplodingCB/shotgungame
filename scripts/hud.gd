@@ -69,7 +69,7 @@ func _build_round_banner() -> void:
 
 
 func _update_round_banner() -> void:
-	var main := get_tree().current_scene
+	var main := Arena.of(self)
 	var rm: Node = main.round_manager if main != null and "round_manager" in main else null
 	if rm == null or str(rm.banner_text) == "":
 		_round_banner.visible = false
@@ -170,7 +170,7 @@ func _update_death_label(delta: float) -> void:
 		_death_label.visible = true
 		_death_label.modulate.a = 1.0
 		var text := "ELIMINATED"
-		var main := get_tree().current_scene
+		var main := Arena.of(self)
 		if main != null and main.has_method("spectate_target"):
 			var t: Node2D = main.spectate_target()
 			if t != null:
@@ -333,7 +333,7 @@ func _build_scoreboard() -> void:
 
 
 func _update_scoreboard() -> void:
-	var main := get_tree().current_scene
+	var main := Arena.of(self)
 	var players_node: Node = main.get_node_or_null("Players") if main != null else null
 	if Net.mode == Net.Mode.SOLO or players_node == null or not "scores" in main:
 		_score_box.visible = false
@@ -404,7 +404,7 @@ func _update_scoreboard() -> void:
 
 
 func _update_wave_label() -> void:
-	var main := get_tree().current_scene
+	var main := Arena.of(self)
 	if main == null or not "wave" in main or int(main.wave) == 0:
 		_wave_label.visible = false
 		return

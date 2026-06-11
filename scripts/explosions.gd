@@ -17,7 +17,7 @@ const WAVE_PUSH := 9.0  # px/s of shove per point of blast damage, at the heart
 # standing inside their own blast.
 static func blast(from: Node2D, pos: Vector2, radius: float, dmg: float,
 		attacker_id := 0, lethal := true, except = null, visual := true) -> void:
-	var scene := from.get_tree().current_scene
+	var scene := Arena.of(from)
 	if visual:
 		var fx := BREAK_EFFECT.instantiate()
 		fx.scale = Vector2.ONE * (radius / 70.0)
@@ -58,7 +58,7 @@ static func shockwave(from: Node2D, pos: Vector2, radius: float, strength: float
 			_shove(pos, radius, strength, p)
 	if not from.multiplayer.is_server():
 		return
-	var scene := from.get_tree().current_scene
+	var scene := Arena.of(from)
 	if scene == null:
 		return
 	for holder_name in ["Asteroids", "Pickups"]:
@@ -98,6 +98,6 @@ static func boom(from: Node2D, pos: Vector2) -> void:
 	snd.max_distance = 4000.0
 	snd.bus = "SFX"
 	snd.position = pos
-	from.get_tree().current_scene.add_child(snd)
+	Arena.of(from).add_child(snd)
 	snd.play()
 	snd.finished.connect(snd.queue_free)

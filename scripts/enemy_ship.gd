@@ -109,7 +109,7 @@ func _shoot(dir: Vector2) -> void:
 	p.modulate = Color(0.45, 1.0, 0.9)
 	p.exclude = excl
 	p.position = global_position + dir * 32.0
-	get_tree().current_scene.add_child(p)
+	Arena.of(self).add_child(p)
 	p.reset_physics_interpolation()
 
 
@@ -130,7 +130,7 @@ func take_damage(amount: float, dir: Vector2, _at: Vector2, _attacker_id := 0) -
 		var fx := BREAK_EFFECT.instantiate()
 		fx.scale = Vector2.ONE * 0.7
 		fx.position = global_position
-		get_tree().current_scene.add_child(fx)
+		Arena.of(self).add_child(fx)
 		fx.reset_physics_interpolation()
 		died.emit()
 		queue_free()

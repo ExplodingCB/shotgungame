@@ -94,7 +94,7 @@ func _server_damage(amount: float, dir: Vector2, at: Vector2, attacker_id := 0) 
 			sprite.modulate = Color(1.0, 0.75, 0.3)
 			get_tree().create_timer(0.12).timeout.connect(_detonate.bind(attacker_id))
 			return
-		var main: Node = get_tree().current_scene
+		var main: Node = Arena.of(self)
 		main.spawn_break_fx.rpc(global_position, clampf(_radius / 30.0, 0.5, 3.0), false)
 		queue_free()
 
@@ -103,7 +103,7 @@ func _detonate(attacker_id: int) -> void:
 	if not is_inside_tree():
 		return
 	var radius := _radius * 4.0 + 60.0
-	var main: Node = get_tree().current_scene
+	var main: Node = Arena.of(self)
 	main.spawn_break_fx.rpc(global_position, clampf(radius / 70.0, 1.0, 3.5), true)
 	Explosions.blast(self, global_position, radius, 30.0, attacker_id, true, self, false)
 	queue_free()

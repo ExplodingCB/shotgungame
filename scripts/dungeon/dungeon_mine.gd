@@ -58,7 +58,7 @@ func _explode(attacker_id := 0) -> void:
 		return
 	_dead = true
 	Explosions.blast(self, global_position, BLAST_RADIUS, BLAST_DAMAGE, attacker_id, true, self)
-	var main := get_tree().current_scene
+	var main := Arena.of(self)
 	if main != null and main.has_method("add_shake"):
 		main.add_shake(6.0)
 	queue_free()

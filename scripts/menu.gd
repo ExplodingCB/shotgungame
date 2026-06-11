@@ -1,6 +1,7 @@
-# Main menu: Portal 2-style left rail over a live arena diorama.
-# The rail swaps its page in place (main list / Play Online / Options);
-# behind it a handful of scripted ships drift and trade tracer fire.
+# Main menu: Portal 2-style left rail over the actual game. A couch
+# brawl runs in a SubViewport behind the rail — four DemoBrain ships
+# playing real rounds — while the rail swaps its page in place
+# (main list / Play Online / Options).
 extends Control
 
 const ACCENT := Color(1.0, 0.62, 0.1)
@@ -8,11 +9,9 @@ const TEXT_BRIGHT := Color(0.94, 0.93, 0.97)
 const TEXT_DIM := Color(0.62, 0.6, 0.68)
 
 const TITLE_FONT := preload("res://assets/fonts/RussoOne-Regular.ttf")
+const LOGO := preload("res://assets/mainmenu/logo.png")
 const MUSIC := preload("res://audio/music/main_menu_music.mp3")
-const NEBULA := preload("res://assets/space-backgrounds/Purple Nebula/Purple_Nebula_05-1024x1024.png")
-const ROCK_HUGE := preload("res://assets/asteroids/Asteroids_01_huge.png")
-const ROCK_LARGE := preload("res://assets/asteroids/Asteroids_01_large.png")
-const ROCK_MEDIUM := preload("res://assets/asteroids/Asteroids_01_medium.png")
+const MAIN_SCENE := preload("res://scenes/main.tscn")
 const PlayerScript := preload("res://scripts/player.gd")
 
 var _ip_edit: LineEdit
@@ -22,15 +21,9 @@ var _pages := {}  # name -> Control, swapped in place on the rail
 var _page := "main"
 var _first_focus := {}  # name -> Control to focus when the page shows
 
-var _ships: Array = []  # Diorama.Ship
-var _rocks: Array[TextureRect] = []
-var _fx_layer: Node2D
-var _t := 0.0
-var _next_shot := 2.0
-
 
 func _ready() -> void:
-	_build_diorama()
+	_build_demo()
 	_build_rail()
 	_show_page("main")
 
@@ -50,69 +43,54 @@ func _unhandled_input(event: InputEvent) -> void:
 		accept_event()
 
 
-# --- Diorama: drifting rocks + ships flying lazy loops ----------------
+# --- Background demo: the real game, played by brains ------------------
 
-func _process(delta: float) -> void:
-	_t += delta
-	for i in _rocks.size():
-		var r := _rocks[i]
-		var dir := 1.0 if i % 2 == 0 else -1.0
-		r.rotation += delta * (0.03 + 0.02 * i) * dir
-		r.position += Vector2(8.0 + 3.0 * i, -4.0 + 2.5 * i) * delta * dir
-		if r.position.x > size.x + 200.0:
-			r.position.x = -200.0
-		elif r.position.x < -200.0:
-			r.position.x = size.x + 200.0
-	for s in _ships:
-		s.fly(_t, delta)
-	_next_shot -= delta
-	if _next_shot <= 0.0 and _ships.size() >= 2:
-		_next_shot = randf_range(1.0, 2.6)
-		var a: Node2D = _ships.pick_random()
-		var b: Node2D = _ships[(_ships.find(a) + 1 + randi() % (_ships.size() - 1)) % _ships.size()]
-		var tracer := Diorama.Tracer.new()
-		tracer.from = a.position
-		tracer.to = b.position + Vector2(randf_range(-40, 40), randf_range(-40, 40))
-		tracer.color = a.color
-		_fx_layer.add_child(tracer)
+# The demo's gunfire rides the SFX bus; hold it muted while the menu
+# owns the screen (volume changes elsewhere re-apply bus state, so
+# this re-asserts every frame).
+func _process(_delta: float) -> void:
+	AudioServer.set_bus_mute(AudioServer.get_bus_index("SFX"), true)
 
 
-func _build_diorama() -> void:
-	var bg := TextureRect.new()
-	bg.texture = NEBULA
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	bg.modulate = Color(0.58, 0.54, 0.64)
-	add_child(bg)
+func _exit_tree() -> void:
+	AudioServer.set_bus_mute(AudioServer.get_bus_index("SFX"),
+			Net.sfx_volume <= 0.001)
 
+
+func _build_demo() -> void:
+	Net.mode = Net.Mode.LOCAL
+	Net.local_roster = [100, 101, 102, 103]
+	Net.local_colors = [0, 1, 2, 3]
+
+	var container := SubViewportContainer.new()
+	container.stretch = true
+	container.set_anchors_preset(Control.PRESET_FULL_RECT)
+	container.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(container)
+	var vp := SubViewport.new()
+	vp.gui_disable_input = true
+	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	container.add_child(vp)
+
+	# The demo plays mute and chromeless: no HUD, no pause handler, no
+	# second music track; brains replace the pad-polling controls.
+	var demo: Node = MAIN_SCENE.instantiate()
+	vp.add_child(demo)
+	demo.get_node("HUD").visible = false
+	demo.get_node("HUD/PauseMenu").queue_free()
+	for c in demo.get_children():
+		if c is AudioStreamPlayer:
+			c.queue_free()
+	for p in demo.get_node("Players").get_children():
+		p.controls = DemoBrain.new(p)
+
+	# Dim + vignette so the rail reads over the firefight.
 	var tint := ColorRect.new()
-	tint.color = Color(0, 0, 0, 0.38)
+	tint.color = Color(0, 0, 0, 0.32)
 	tint.set_anchors_preset(Control.PRESET_FULL_RECT)
+	tint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(tint)
 
-	_add_rock(ROCK_HUGE, Vector2(1380, 720), 260.0, 0.6)
-	_add_rock(ROCK_LARGE, Vector2(900, 200), 150.0, 0.55)
-	_add_rock(ROCK_MEDIUM, Vector2(1700, 380), 90.0, 0.5)
-	_add_rock(ROCK_MEDIUM, Vector2(1150, 900), 70.0, 0.45)
-
-	_fx_layer = Node2D.new()
-	add_child(_fx_layer)
-
-	# Four ships dogfight on the right two-thirds, clear of the rail.
-	var arena := Rect2(Vector2(860, 160), Vector2(900, 760))
-	for i in 4:
-		var ship := Diorama.Ship.new()
-		ship.color = PlayerScript.COLORS[i]
-		ship.scale = Vector2.ONE * 2.4
-		ship.center = arena.position + arena.size * Vector2(randf_range(0.2, 0.8), randf_range(0.25, 0.75))
-		ship.radii = Vector2(randf_range(160, 300), randf_range(110, 220))
-		ship.speed = randf_range(0.3, 0.5) * (1.0 if i % 2 == 0 else -1.0)
-		ship.phase = randf() * TAU
-		_fx_layer.add_child(ship)
-		_ships.append(ship)
-
-	# Soft vignette so the rail text pops and edges fall away.
 	var vignette := TextureRect.new()
 	var grad := Gradient.new()
 	grad.set_color(0, Color(0, 0, 0, 0))
@@ -126,21 +104,8 @@ func _build_diorama() -> void:
 	vignette.set_anchors_preset(Control.PRESET_FULL_RECT)
 	vignette.stretch_mode = TextureRect.STRETCH_SCALE
 	vignette.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(vignette)
-
-
-func _add_rock(tex: Texture2D, pos: Vector2, rock_size: float, alpha: float) -> void:
-	var r := TextureRect.new()
-	r.texture = tex
-	r.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	r.size = Vector2.ONE * rock_size
-	r.position = pos
-	r.pivot_offset = r.size / 2.0
-	r.rotation = randf() * TAU
-	r.modulate = Color(0.75, 0.7, 0.78, alpha)
-	add_child(r)
-	_rocks.append(r)
 
 
 # --- Left rail ---------------------------------------------------------
@@ -301,56 +266,17 @@ func _show_page(name_: String) -> void:
 		focus.grab_focus()
 
 
-# Logo: "SHOTGUN" rides quiet and bright; "DRIFT" hits big, orange and
-# skewed forward, with a pellet-scatter flair trailing off underneath.
+# The wordmark image, sized for the rail (the PNG carries its own
+# transparent padding).
 func _build_logo() -> Control:
-	var logo := VBoxContainer.new()
-	logo.add_theme_constant_override("separation", 0)
-
-	var top := Label.new()
-	top.text = "SHOTGUN"
-	var top_font := FontVariation.new()
-	top_font.base_font = TITLE_FONT
-	top_font.set_spacing(TextServer.SPACING_GLYPH, 9)
-	top_font.variation_transform = Transform2D(0.0, Vector2.ONE, -0.1, Vector2.ZERO)
-	top.add_theme_font_override("font", top_font)
-	top.add_theme_font_size_override("font_size", 58)
-	top.add_theme_color_override("font_color", TEXT_BRIGHT)
-	top.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.7))
-	top.add_theme_constant_override("shadow_offset_y", 3)
-	logo.add_child(top)
-
-	var bottom := Label.new()
-	bottom.text = "DRIFT"
-	var bottom_font := FontVariation.new()
-	bottom_font.base_font = TITLE_FONT
-	bottom_font.set_spacing(TextServer.SPACING_GLYPH, 12)
-	bottom_font.variation_transform = Transform2D(0.0, Vector2.ONE, -0.18, Vector2.ZERO)
-	bottom.add_theme_font_override("font", bottom_font)
-	bottom.add_theme_font_size_override("font_size", 104)
-	bottom.add_theme_color_override("font_color", Color(1.0, 0.64, 0.18))
-	bottom.add_theme_color_override("font_shadow_color", Color(0.45, 0.15, 0.0, 0.8))
-	bottom.add_theme_constant_override("shadow_offset_y", 5)
-	logo.add_child(bottom)
-
-	var flair := LogoFlair.new()
-	flair.custom_minimum_size = Vector2(0, 22)
-	logo.add_child(flair)
+	var logo := TextureRect.new()
+	logo.texture = LOGO
+	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
+	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	var ratio := LOGO.get_height() / float(LOGO.get_width())
+	logo.custom_minimum_size = Vector2(500, 500 * ratio)
+	logo.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	return logo
-
-
-# Speed lines + buckshot pellets fanning out under the wordmark.
-class LogoFlair extends Control:
-	func _draw() -> void:
-		var orange := Color(1.0, 0.64, 0.18)
-		for i in 3:
-			var y := 4.0 + i * 6.0
-			var w := 190.0 - i * 55.0
-			draw_line(Vector2(0, y), Vector2(w, y),
-					Color(orange.r, orange.g, orange.b, 0.75 - i * 0.22), 3.0, true)
-		for p in [Vector2(225, 3), Vector2(258, 9), Vector2(238, 15),
-				Vector2(285, 5), Vector2(272, 17), Vector2(305, 12)]:
-			draw_circle(p, 2.6, Color(1.0, 0.78, 0.4, 0.85))
 
 
 # --- Rail widgets -------------------------------------------------------
@@ -384,7 +310,8 @@ func _item_button(label: String) -> Button:
 	var btn := Button.new()
 	btn.text = label
 	btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	btn.add_theme_font_size_override("font_size", 21)
+	btn.add_theme_font_override("font", TITLE_FONT)
+	btn.add_theme_font_size_override("font_size", 20)
 	btn.add_theme_color_override("font_color", TEXT_BRIGHT)
 	btn.add_theme_color_override("font_hover_color", ACCENT)
 	btn.add_theme_color_override("font_focus_color", ACCENT)
@@ -401,11 +328,10 @@ func _heading(text: String) -> Label:
 	var lbl := Label.new()
 	lbl.text = text
 	var font := FontVariation.new()
-	font.base_font = ThemeDB.fallback_font
-	font.set_spacing(TextServer.SPACING_GLYPH, 6)
-	font.variation_embolden = 0.6
+	font.base_font = TITLE_FONT
+	font.set_spacing(TextServer.SPACING_GLYPH, 5)
 	lbl.add_theme_font_override("font", font)
-	lbl.add_theme_font_size_override("font_size", 26)
+	lbl.add_theme_font_size_override("font_size", 25)
 	lbl.add_theme_color_override("font_color", ACCENT)
 	return lbl
 
@@ -495,54 +421,3 @@ func _vspace(h: float) -> Control:
 	var s := Control.new()
 	s.custom_minimum_size = Vector2(0, h)
 	return s
-
-
-# --- Diorama actors -----------------------------------------------------
-
-class Diorama:
-	# A ship blob (matching the in-game gradient-circle look) that flies
-	# a lazy lissajous loop and banks into its heading.
-	class Ship extends Node2D:
-		var color := Color.WHITE
-		var center := Vector2.ZERO
-		var radii := Vector2(200, 140)
-		var speed := 0.3
-		var phase := 0.0
-
-		func fly(t: float, _delta: float) -> void:
-			var a := t * speed + phase
-			var pos := center + Vector2(cos(a) * radii.x, sin(a * 1.4) * radii.y)
-			var vel := Vector2(-sin(a) * radii.x, cos(a * 1.4) * radii.y * 1.4) * speed
-			position = pos
-			rotation = vel.angle()
-			queue_redraw()
-
-		func _draw() -> void:
-			# Fading thruster trail behind the body.
-			for i in 4:
-				var k := 1.0 - i / 4.0
-				draw_circle(Vector2(-10.0 - i * 7.0, 0), 3.5 * k,
-						Color(color.r, color.g, color.b, 0.16 * k))
-			draw_circle(Vector2.ZERO, 9.0, color)
-			draw_circle(Vector2(3.5, 0), 2.4, Color(0, 0, 0, 0.5))
-
-	# One shot: a tracer line that fades fast with a flash at the muzzle
-	# and a pop at the far end. Frees itself when spent.
-	class Tracer extends Node2D:
-		var from := Vector2.ZERO
-		var to := Vector2.ZERO
-		var color := Color.WHITE
-		var _life := 0.35
-
-		func _process(delta: float) -> void:
-			_life -= delta
-			if _life <= 0.0:
-				queue_free()
-			queue_redraw()
-
-		func _draw() -> void:
-			var k := clampf(_life / 0.35, 0.0, 1.0)
-			var col := Color(color.r, color.g, color.b, 0.7 * k)
-			draw_line(from, to, col, 3.5, true)
-			draw_circle(from, 8.0 * k, Color(1, 1, 1, 0.55 * k))
-			draw_circle(to, 14.0 * (1.0 - k) + 4.0, Color(1, 0.9, 0.7, 0.5 * k))

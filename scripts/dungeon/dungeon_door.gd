@@ -68,7 +68,7 @@ func unlock() -> void:
 func _on_body(body: Node2D) -> void:
 	if locked or not body.is_in_group("player"):
 		return
-	var main := get_tree().current_scene
+	var main := Arena.of(self)
 	if main != null and main.has_method("enter_door"):
 		main.enter_door(reward)
 

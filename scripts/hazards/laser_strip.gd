@@ -97,7 +97,7 @@ func _path_hits(prev: Vector2, cur: Vector2) -> bool:
 # nobody dies between rounds. With no round manager (solo, tests) they
 # just run.
 func _running() -> bool:
-	var main := get_tree().current_scene
+	var main := Arena.of(self)
 	if main == null or not ("round_manager" in main) or main.round_manager == null:
 		return true
 	return main.round_manager.fight_active()

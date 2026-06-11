@@ -87,7 +87,7 @@ func _on_body(body: Node2D) -> void:
 	snd.pitch_scale = 1.3 if kind == Kind.REPAIR else 1.0
 	snd.max_distance = 2500.0
 	snd.position = global_position
-	get_tree().current_scene.add_child(snd)
+	Arena.of(self).add_child(snd)
 	snd.play()
 	snd.finished.connect(snd.queue_free)
 	queue_free()

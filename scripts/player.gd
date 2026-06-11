@@ -293,7 +293,7 @@ func _add_shake(amount: float) -> void:
 	if camera.enabled:
 		_shake = maxf(_shake, amount)
 		return
-	var cam: Node = get_tree().current_scene.get_node_or_null("SharedCamera")
+	var cam: Node = Arena.of(self).get_node_or_null("SharedCamera")
 	if cam != null:
 		cam.add_shake(amount)
 
@@ -395,7 +395,7 @@ func _grenade_fx(aim: Vector2) -> void:
 	p.deals_damage = is_multiplayer_authority()
 	p.shooter_id = fighter_key()
 	p.position = global_position + aim * 44.0
-	get_tree().current_scene.add_child(p)
+	Arena.of(self).add_child(p)
 	p.reset_physics_interpolation()
 	_play_fx(SND_SWITCH)
 
@@ -448,7 +448,7 @@ func _net_request_pickup(pickup_name: String, drop_kind: int, drop_ammo: int) ->
 	if not multiplayer.is_server() \
 			or multiplayer.get_remote_sender_id() != get_multiplayer_authority():
 		return
-	var holder := get_tree().current_scene.get_node_or_null("Pickups")
+	var holder := Arena.of(self).get_node_or_null("Pickups")
 	if holder == null:
 		return
 	var pickup := holder.get_node_or_null(NodePath(pickup_name))
@@ -462,7 +462,7 @@ func _net_request_pickup(pickup_name: String, drop_kind: int, drop_ammo: int) ->
 	var got_ammo: int = pickup.ammo
 	pickup.queue_free()
 	if drop_kind >= 0 and drop_kind != Weapon.PISTOL and WEAPON_DATA.has(drop_kind):
-		get_tree().current_scene.spawn_weapon_pickup(
+		Arena.of(self).spawn_weapon_pickup(
 				drop_kind, drop_ammo, global_position, Vector2.ZERO, randf_range(-1.2, 1.2))
 	_net_receive_weapon.rpc_id(get_multiplayer_authority(), got_kind, got_ammo)
 
@@ -509,7 +509,7 @@ func _net_throw(kind: int, amount: int, aim: Vector2) -> void:
 	var dir := aim.normalized()
 	if dir == Vector2.ZERO:
 		dir = Vector2.RIGHT
-	get_tree().current_scene.spawn_weapon_pickup(
+	Arena.of(self).spawn_weapon_pickup(
 			kind, amount,
 			global_position + dir * 50.0,
 			dir * THROW_SPEED + velocity * 0.5,
@@ -569,7 +569,7 @@ func _apply_damage(amount: float, dir: Vector2, attacker_id := 0) -> void:
 		# keeps score (and ignores suicides and enemy-ship kills).
 		# Couch mode is single-process, so it reports directly with the
 		# victim's slot key instead of leaning on the RPC sender id.
-		var main := get_tree().current_scene
+		var main := Arena.of(self)
 		# Decide the fate before reporting: the report may end the round.
 		var out_for_round: bool = main != null \
 				and main.has_method("round_fight_active") and main.round_fight_active()
@@ -626,7 +626,7 @@ func _apply_dead_state() -> void:
 	# camera until revive() hands this one back.
 	if is_locally_controlled() \
 			and (Net.mode == Net.Mode.HOST or Net.mode == Net.Mode.JOIN):
-		var main := get_tree().current_scene
+		var main := Arena.of(self)
 		if main != null and main.has_method("set_spectating"):
 			main.set_spectating(_dead, global_position)
 		camera.enabled = not _dead
@@ -771,7 +771,7 @@ func _spawn_projectiles(aim: Vector2, data: Dictionary, lethal: bool) -> void:
 		p.deals_damage = lethal
 		p.shooter_id = fighter_key()
 		p.position = muzzle.global_position
-		get_tree().current_scene.add_child(p)
+		Arena.of(self).add_child(p)
 		p.reset_physics_interpolation()
 
 
@@ -781,7 +781,7 @@ func _puff_smoke(amount: int, size: float, aim: Vector2) -> void:
 	puff.rotation = aim.angle()
 	puff.scale = Vector2.ONE * size
 	puff.position = muzzle.global_position
-	get_tree().current_scene.add_child(puff)
+	Arena.of(self).add_child(puff)
 	puff.reset_physics_interpolation()
 
 
@@ -845,7 +845,7 @@ func _fire_beam(aim: Vector2, lethal: bool) -> void:
 	beam.begin_cap_mode = Line2D.LINE_CAP_ROUND
 	beam.end_cap_mode = Line2D.LINE_CAP_ROUND
 	beam.position = from
-	get_tree().current_scene.add_child(beam)
+	Arena.of(self).add_child(beam)
 	beam.reset_physics_interpolation()
 	var tween := beam.create_tween()
 	tween.tween_property(beam, "modulate:a", 0.0, 0.4)

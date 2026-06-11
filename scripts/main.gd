@@ -81,6 +81,7 @@ var _join_notices := false
 
 
 func _ready() -> void:
+	add_to_group("arena")  # spawn target for fx/projectiles (see Arena.of)
 	# Everyone starts on Classic: it's the solo arena and the warm-up
 	# lobby. Versus rounds swap levels through the round manager.
 	level_host.load_level(0)
