@@ -24,7 +24,9 @@ var thrower := 0
 var _collected := false
 var _armed := false
 var _arm_grace := 0.0
-var _prompt: Label
+var _prompt: HBoxContainer
+var _prompt_icon: TextureRect
+var _prompt_key: Label
 
 @onready var sprite: Sprite2D = $Sprite2D
 
@@ -40,17 +42,25 @@ func _ready() -> void:
 	add_child(glow)
 
 	# Grab prompt floats above the gun; top_level so the rigid body's
-	# spin doesn't whirl the text around.
-	_prompt = Label.new()
-	_prompt.text = "E  —  %s" % WeaponDB.DATA[kind]["name"]
+	# spin doesn't whirl it around. Shows the X button to pad players
+	# and the E keycap to keyboard players (swapped per frame for
+	# whoever is standing closest).
+	_prompt = HBoxContainer.new()
 	_prompt.top_level = true
 	_prompt.visible = false
-	_prompt.custom_minimum_size = Vector2(220, 0)
-	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_prompt.add_theme_font_size_override("font_size", 15)
-	_prompt.add_theme_color_override("font_color", WeaponDB.rarity_color(kind))
-	_prompt.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
-	_prompt.add_theme_constant_override("outline_size", 4)
+	_prompt.add_theme_constant_override("separation", 7)
+	_prompt_icon = ButtonIcons.icon("x", 30.0)
+	_prompt.add_child(_prompt_icon)
+	_prompt_key = ButtonIcons.keycap("E")
+	_prompt.add_child(_prompt_key)
+	var prompt_name := Label.new()
+	prompt_name.text = WeaponDB.DATA[kind]["name"]
+	prompt_name.add_theme_font_size_override("font_size", 15)
+	prompt_name.add_theme_color_override("font_color", WeaponDB.rarity_color(kind))
+	prompt_name.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	prompt_name.add_theme_constant_override("outline_size", 4)
+	prompt_name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_prompt.add_child(prompt_name)
 	add_child(_prompt)
 
 	if multiplayer.is_server():
@@ -69,7 +79,11 @@ func _process(_delta: float) -> void:
 	_prompt.visible = lp != null \
 			and lp.global_position.distance_to(global_position) < lp.GRAB_RADIUS
 	if _prompt.visible:
-		_prompt.global_position = global_position + Vector2(-110.0, -72.0)
+		var pad: bool = lp.device >= 0
+		_prompt_icon.visible = pad
+		_prompt_key.visible = not pad
+		_prompt.global_position = global_position \
+				+ Vector2(-_prompt.size.x / 2.0, -76.0)
 
 
 # Nearest player steered from this machine — couch mode has several.
