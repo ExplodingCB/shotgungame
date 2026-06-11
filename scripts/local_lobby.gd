@@ -46,13 +46,6 @@ func _ready() -> void:
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_board.add_child(bg)
 
-	# A thin accent edge along the top of the rising board.
-	var edge := ColorRect.new()
-	edge.color = ACCENT
-	edge.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	edge.custom_minimum_size = Vector2(0, 4)
-	_board.add_child(edge)
-
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
 	margin.add_theme_constant_override("margin_left", 90)
@@ -66,7 +59,7 @@ func _ready() -> void:
 	margin.add_child(box)
 
 	var title := Label.new()
-	title.text = "LOCAL VERSUS"
+	title.text = "SHOWDOWN"
 	var tf := FontVariation.new()
 	tf.base_font = TITLE_FONT
 	tf.set_spacing(TextServer.SPACING_GLYPH, 12)
@@ -179,6 +172,8 @@ func _build_column(i: int) -> Control:
 	# "press A to join", centered in the empty column.
 	var join_hint := VBoxContainer.new()
 	join_hint.set_anchors_preset(Control.PRESET_CENTER)
+	join_hint.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	join_hint.grow_vertical = Control.GROW_DIRECTION_BOTH
 	join_hint.alignment = BoxContainer.ALIGNMENT_CENTER
 	join_hint.add_theme_constant_override("separation", 10)
 	var icon_wrap := CenterContainer.new()
@@ -396,9 +391,9 @@ func _close() -> void:
 
 # A blown-up replica of the in-game ship: the player scene's radial-
 # gradient body and hull spots, redrawn at portrait size, with the
-# real shotgun sprite on the hip.
+# pistol on the hip (short enough to stay inside the column).
 class ShipPortrait extends Node2D:
-	const GUN := preload("res://assets/guns-assetpack/Shotguns/MP-133.png")
+	const GUN := preload("res://assets/guns-assetpack/Handguns/M1911.png")
 	const R := 105.0  # body radius; in-game it's 22
 
 	var color := Color.WHITE:
@@ -410,8 +405,8 @@ class ShipPortrait extends Node2D:
 		var gun := Sprite2D.new()
 		gun.texture = GUN
 		gun.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		gun.scale = Vector2.ONE * (R / 22.0)
-		gun.position = Vector2(24, 0) * (R / 22.0)
+		gun.scale = Vector2.ONE * (R / 22.0) * 1.1  # the pistol's in-game sprite_scale
+		gun.position = Vector2(16, 0) * (R / 22.0)
 		add_child(gun)
 
 	func _draw() -> void:

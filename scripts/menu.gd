@@ -19,6 +19,7 @@ var _ip_edit: LineEdit
 var _swatches: Array[Button] = []
 var _rail_root: Control
 var _lobby: Control
+var _demo: Node
 
 var _pages := {}  # name -> Control, swapped in place on the rail
 var _page := "main"
@@ -77,14 +78,14 @@ func _build_demo() -> void:
 
 	# The demo plays mute and chromeless: no HUD, no pause handler, no
 	# second music track; brains replace the pad-polling controls.
-	var demo: Node = MAIN_SCENE.instantiate()
-	vp.add_child(demo)
-	demo.get_node("HUD").visible = false
-	demo.get_node("HUD/PauseMenu").queue_free()
-	for c in demo.get_children():
+	_demo = MAIN_SCENE.instantiate()
+	vp.add_child(_demo)
+	_demo.get_node("HUD").visible = false
+	_demo.get_node("HUD/PauseMenu").queue_free()
+	for c in _demo.get_children():
 		if c is AudioStreamPlayer:
 			c.queue_free()
-	for p in demo.get_node("Players").get_children():
+	for p in _demo.get_node("Players").get_children():
 		p.controls = DemoBrain.new(p)
 
 	# Dim + vignette so the rail reads over the firefight.
@@ -275,6 +276,9 @@ func _open_lobby() -> void:
 	if focused != null:
 		focused.release_focus()
 	_rail_root.visible = false
+	# Freeze the brawl while the board is up — its explosions shake the
+	# screen right through a dramatic entrance.
+	_demo.process_mode = Node.PROCESS_MODE_DISABLED
 	_lobby = LOBBY_SCENE.instantiate()
 	_lobby.closed.connect(_close_lobby)
 	add_child(_lobby)
@@ -283,6 +287,7 @@ func _open_lobby() -> void:
 func _close_lobby() -> void:
 	_lobby.queue_free()
 	_lobby = null
+	_demo.process_mode = Node.PROCESS_MODE_INHERIT
 	_rail_root.visible = true
 	_show_page("main")
 
