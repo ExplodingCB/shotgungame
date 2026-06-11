@@ -64,11 +64,26 @@ func _stage_vortex_then_pad() -> void:
 	var b: Node = players[1]
 	# Direction is what matters; magnitude fights the drift friction.
 	_check(a.velocity.x > 1.0, "vortex did not pull the player inward (%s)" % a.velocity)
-	# Core burn: standing on the well's heart hurts on the tick.
+	# Core burn: standing on the well's heart hurts on the sweep.
 	var hp: float = b.health
 	_vortex.position = b.global_position
-	_vortex._damage_core()
+	_vortex._prev[b.get_instance_id()] = b.global_position
+	_vortex._sweep_core(0.016)
 	_check(b.health < hp, "vortex core did not burn (%s -> %s)" % [hp, b.health])
+	# Cooldown: the very next frame must not burn again.
+	hp = b.health
+	_vortex._sweep_core(0.016)
+	_check(b.health == hp, "vortex core re-burned inside the cooldown window")
+	# Tunneling: a ship that dove clean across the core between frames
+	# still burns — the swept path passes through the heart.
+	_vortex.position = a.global_position + Vector2(0, 300)
+	var a_hp: float = a.health
+	_vortex._prev[a.get_instance_id()] = a.global_position
+	a.global_position = a.global_position + Vector2(0, 600)
+	_vortex._sweep_core(0.016)
+	_check(a.health < a_hp, "vortex core missed a ship that crossed between frames")
+	a.global_position = a.global_position + Vector2(0, -600)
+	a.velocity = Vector2.ZERO
 	_vortex.free()
 	# Park a pad under player A, pointing +x.
 	a.velocity = Vector2.ZERO
