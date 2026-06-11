@@ -7,6 +7,7 @@ const ACCENT := Color(1.0, 0.62, 0.1)
 const TEXT_BRIGHT := Color(0.94, 0.93, 0.97)
 const TEXT_DIM := Color(0.62, 0.6, 0.68)
 
+const TITLE_FONT := preload("res://assets/fonts/RussoOne-Regular.ttf")
 const MUSIC := preload("res://audio/music/main_menu_music.mp3")
 const NEBULA := preload("res://assets/space-backgrounds/Purple Nebula/Purple_Nebula_05-1024x1024.png")
 const ROCK_HUGE := preload("res://assets/asteroids/Asteroids_01_huge.png")
@@ -66,7 +67,7 @@ func _process(delta: float) -> void:
 		s.fly(_t, delta)
 	_next_shot -= delta
 	if _next_shot <= 0.0 and _ships.size() >= 2:
-		_next_shot = randf_range(1.6, 4.0)
+		_next_shot = randf_range(1.0, 2.6)
 		var a: Node2D = _ships.pick_random()
 		var b: Node2D = _ships[(_ships.find(a) + 1 + randi() % (_ships.size() - 1)) % _ships.size()]
 		var tracer := Diorama.Tracer.new()
@@ -90,22 +91,23 @@ func _build_diorama() -> void:
 	tint.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(tint)
 
-	_add_rock(ROCK_HUGE, Vector2(1380, 720), 190.0, 0.55)
-	_add_rock(ROCK_LARGE, Vector2(900, 220), 110.0, 0.5)
-	_add_rock(ROCK_MEDIUM, Vector2(1700, 380), 62.0, 0.45)
-	_add_rock(ROCK_MEDIUM, Vector2(1150, 880), 50.0, 0.4)
+	_add_rock(ROCK_HUGE, Vector2(1380, 720), 260.0, 0.6)
+	_add_rock(ROCK_LARGE, Vector2(900, 200), 150.0, 0.55)
+	_add_rock(ROCK_MEDIUM, Vector2(1700, 380), 90.0, 0.5)
+	_add_rock(ROCK_MEDIUM, Vector2(1150, 900), 70.0, 0.45)
 
 	_fx_layer = Node2D.new()
 	add_child(_fx_layer)
 
-	# Three ships dogfight on the right two-thirds, clear of the rail.
-	var arena := Rect2(Vector2(820, 140), Vector2(940, 800))
-	for i in 3:
+	# Four ships dogfight on the right two-thirds, clear of the rail.
+	var arena := Rect2(Vector2(860, 160), Vector2(900, 760))
+	for i in 4:
 		var ship := Diorama.Ship.new()
 		ship.color = PlayerScript.COLORS[i]
+		ship.scale = Vector2.ONE * 2.4
 		ship.center = arena.position + arena.size * Vector2(randf_range(0.2, 0.8), randf_range(0.25, 0.75))
-		ship.radii = Vector2(randf_range(130, 260), randf_range(90, 190))
-		ship.speed = randf_range(0.25, 0.45) * (1.0 if i % 2 == 0 else -1.0)
+		ship.radii = Vector2(randf_range(160, 300), randf_range(110, 220))
+		ship.speed = randf_range(0.3, 0.5) * (1.0 if i % 2 == 0 else -1.0)
 		ship.phase = randf() * TAU
 		_fx_layer.add_child(ship)
 		_ships.append(ship)
@@ -173,33 +175,9 @@ func _build_rail() -> void:
 	rail.add_theme_constant_override("separation", 0)
 	margin.add_child(rail)
 
-	var title := Label.new()
-	title.text = "SHOTGUN\nDRIFT"
-	var title_font := FontVariation.new()
-	title_font.base_font = ThemeDB.fallback_font
-	title_font.set_spacing(TextServer.SPACING_GLYPH, 10)
-	title_font.variation_embolden = 0.9
-	title.add_theme_font_override("font", title_font)
-	title.add_theme_font_size_override("font_size", 64)
-	title.add_theme_constant_override("line_spacing", -14)
-	title.add_theme_color_override("font_color", Color(1.0, 0.64, 0.18))
-	title.add_theme_color_override("font_shadow_color", Color(0.45, 0.15, 0.0, 0.8))
-	title.add_theme_constant_override("shadow_offset_y", 4)
-	rail.add_child(title)
+	rail.add_child(_build_logo())
 
-	rail.add_child(_vspace(10))
-
-	var subtitle := Label.new()
-	subtitle.text = "recoil is your engine"
-	var sub_font := FontVariation.new()
-	sub_font.base_font = ThemeDB.fallback_font
-	sub_font.set_spacing(TextServer.SPACING_GLYPH, 6)
-	subtitle.add_theme_font_override("font", sub_font)
-	subtitle.add_theme_font_size_override("font_size", 15)
-	subtitle.add_theme_color_override("font_color", TEXT_DIM)
-	rail.add_child(subtitle)
-
-	rail.add_child(_vspace(52))
+	rail.add_child(_vspace(56))
 
 	# Pages swap inside this host; the rail never moves.
 	var host := Control.new()
@@ -321,6 +299,58 @@ func _show_page(name_: String) -> void:
 	var focus: Control = _first_focus.get(name_)
 	if focus != null:
 		focus.grab_focus()
+
+
+# Logo: "SHOTGUN" rides quiet and bright; "DRIFT" hits big, orange and
+# skewed forward, with a pellet-scatter flair trailing off underneath.
+func _build_logo() -> Control:
+	var logo := VBoxContainer.new()
+	logo.add_theme_constant_override("separation", 0)
+
+	var top := Label.new()
+	top.text = "SHOTGUN"
+	var top_font := FontVariation.new()
+	top_font.base_font = TITLE_FONT
+	top_font.set_spacing(TextServer.SPACING_GLYPH, 9)
+	top_font.variation_transform = Transform2D(0.0, Vector2.ONE, -0.1, Vector2.ZERO)
+	top.add_theme_font_override("font", top_font)
+	top.add_theme_font_size_override("font_size", 58)
+	top.add_theme_color_override("font_color", TEXT_BRIGHT)
+	top.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.7))
+	top.add_theme_constant_override("shadow_offset_y", 3)
+	logo.add_child(top)
+
+	var bottom := Label.new()
+	bottom.text = "DRIFT"
+	var bottom_font := FontVariation.new()
+	bottom_font.base_font = TITLE_FONT
+	bottom_font.set_spacing(TextServer.SPACING_GLYPH, 12)
+	bottom_font.variation_transform = Transform2D(0.0, Vector2.ONE, -0.18, Vector2.ZERO)
+	bottom.add_theme_font_override("font", bottom_font)
+	bottom.add_theme_font_size_override("font_size", 104)
+	bottom.add_theme_color_override("font_color", Color(1.0, 0.64, 0.18))
+	bottom.add_theme_color_override("font_shadow_color", Color(0.45, 0.15, 0.0, 0.8))
+	bottom.add_theme_constant_override("shadow_offset_y", 5)
+	logo.add_child(bottom)
+
+	var flair := LogoFlair.new()
+	flair.custom_minimum_size = Vector2(0, 22)
+	logo.add_child(flair)
+	return logo
+
+
+# Speed lines + buckshot pellets fanning out under the wordmark.
+class LogoFlair extends Control:
+	func _draw() -> void:
+		var orange := Color(1.0, 0.64, 0.18)
+		for i in 3:
+			var y := 4.0 + i * 6.0
+			var w := 190.0 - i * 55.0
+			draw_line(Vector2(0, y), Vector2(w, y),
+					Color(orange.r, orange.g, orange.b, 0.75 - i * 0.22), 3.0, true)
+		for p in [Vector2(225, 3), Vector2(258, 9), Vector2(238, 15),
+				Vector2(285, 5), Vector2(272, 17), Vector2(305, 12)]:
+			draw_circle(p, 2.6, Color(1.0, 0.78, 0.4, 0.85))
 
 
 # --- Rail widgets -------------------------------------------------------
@@ -512,7 +542,7 @@ class Diorama:
 
 		func _draw() -> void:
 			var k := clampf(_life / 0.35, 0.0, 1.0)
-			var col := Color(color.r, color.g, color.b, 0.55 * k)
-			draw_line(from, to, col, 2.0, true)
-			draw_circle(from, 4.0 * k, Color(1, 1, 1, 0.5 * k))
-			draw_circle(to, 7.0 * (1.0 - k) + 2.0, Color(1, 0.9, 0.7, 0.45 * k))
+			var col := Color(color.r, color.g, color.b, 0.7 * k)
+			draw_line(from, to, col, 3.5, true)
+			draw_circle(from, 8.0 * k, Color(1, 1, 1, 0.55 * k))
+			draw_circle(to, 14.0 * (1.0 - k) + 4.0, Color(1, 0.9, 0.7, 0.5 * k))
