@@ -15,7 +15,9 @@ const MAIN_SCENE := preload("res://scenes/main.tscn")
 const LOBBY_SCENE := preload("res://scenes/local_lobby.tscn")
 const PlayerScript := preload("res://scripts/player.gd")
 
-var _ip_edit: LineEdit
+var _code_edit: LineEdit
+var _join_btn: Button
+var _join_status: Label
 var _swatches: Array[Button] = []
 var _rail_root: Control
 var _lobby: Control
@@ -199,7 +201,7 @@ func _build_online_page(host: Control) -> Control:
 	page.add_child(_heading("PLAY ONLINE"))
 	page.add_child(_vspace(14))
 
-	var first := _rail_item(page, "Host  (port %d)" % Net.PORT, func(): Net.start_host())
+	var first := _rail_item(page, "Host a Room", func(): Net.start_host())
 
 	page.add_child(_vspace(10))
 
@@ -207,23 +209,34 @@ func _build_online_page(host: Control) -> Control:
 	join_row.add_theme_constant_override("separation", 12)
 	page.add_child(join_row)
 
-	_ip_edit = LineEdit.new()
-	_ip_edit.text = "127.0.0.1"
-	_ip_edit.custom_minimum_size = Vector2(230, 46)
-	_ip_edit.add_theme_font_size_override("font_size", 17)
-	_ip_edit.add_theme_color_override("font_color", TEXT_BRIGHT)
-	_ip_edit.add_theme_color_override("caret_color", ACCENT)
-	_ip_edit.add_theme_stylebox_override("normal",
+	_code_edit = LineEdit.new()
+	_code_edit.placeholder_text = "ROOM CODE"
+	_code_edit.custom_minimum_size = Vector2(230, 46)
+	_code_edit.add_theme_font_size_override("font_size", 17)
+	_code_edit.add_theme_color_override("font_color", TEXT_BRIGHT)
+	_code_edit.add_theme_color_override("caret_color", ACCENT)
+	_code_edit.add_theme_stylebox_override("normal",
 			_underline_style(Color(0.35, 0.33, 0.4)))
-	_ip_edit.add_theme_stylebox_override("focus", _underline_style(ACCENT))
-	_ip_edit.text_submitted.connect(func(_t2): Net.start_join(_ip_edit.text))
-	join_row.add_child(_ip_edit)
+	_code_edit.add_theme_stylebox_override("focus", _underline_style(ACCENT))
+	_code_edit.text_changed.connect(_uppercase_code)
+	_code_edit.text_submitted.connect(func(_t2): _try_join())
+	join_row.add_child(_code_edit)
 
-	var join := _item_button("Join")
-	join.pressed.connect(func(): Net.start_join(_ip_edit.text))
-	join_row.add_child(join)
+	_join_btn = _item_button("Join")
+	_join_btn.pressed.connect(_try_join)
+	join_row.add_child(_join_btn)
 
-	page.add_child(_vspace(22))
+	_join_status = Label.new()
+	_join_status.add_theme_font_size_override("font_size", 14)
+	_join_status.add_theme_color_override("font_color", TEXT_DIM)
+	_join_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_join_status.custom_minimum_size = Vector2(400, 22)
+	_join_status.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	page.add_child(_join_status)
+	Net.join_status.connect(_on_join_status)
+	Net.join_failed.connect(_on_join_failed)
+
+	page.add_child(_vspace(12))
 
 	var color_lbl := Label.new()
 	color_lbl.text = "SHIP COLOR"
@@ -292,7 +305,40 @@ func _close_lobby() -> void:
 	_show_page("main")
 
 
+# --- Join flow: the screen only changes once the room answers ----------
+
+func _try_join() -> void:
+	if Net.backend == null:
+		return
+	_join_btn.disabled = true
+	Net.start_join(_code_edit.text)
+
+
+func _uppercase_code(text: String) -> void:
+	var up := text.to_upper()
+	if up != text:
+		var caret := _code_edit.caret_column
+		_code_edit.text = up
+		_code_edit.caret_column = caret
+
+
+func _on_join_status(message: String) -> void:
+	_join_status.add_theme_color_override("font_color", TEXT_DIM)
+	_join_status.text = message
+
+
+func _on_join_failed(reason: String) -> void:
+	_join_btn.disabled = false
+	_join_status.add_theme_color_override("font_color", Color(0.85, 0.4, 0.35))
+	_join_status.text = reason
+
+
 func _show_page(name_: String) -> void:
+	# Backing out of the online page abandons any join in flight.
+	if _page == "online" and name_ != "online":
+		Net.cancel_join()
+		_join_btn.disabled = false
+		_join_status.text = ""
 	_page = name_
 	for key in _pages:
 		_pages[key].visible = key == name_
