@@ -57,6 +57,9 @@ func _ready() -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(title)
 
+	if Net.mode == Net.Mode.HOST:
+		box.add_child(_room_code_row())
+
 	box.add_child(_spacer(10))
 	box.add_child(_volume_row("MUSIC", Net.music_volume, func(v): Net.set_music_volume(v)))
 	box.add_child(_volume_row("SFX", Net.sfx_volume, func(v): Net.set_sfx_volume(v)))
@@ -130,6 +133,48 @@ func _close() -> void:
 	visible = false
 	Net.ui_open = false
 	get_tree().paused = false
+
+
+# The host's room code, one click from the clipboard. The code can
+# still be negotiating (UPnP) when the menu is built, so it tracks
+# Net.host_info_changed.
+func _room_code_row() -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 14)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+
+	var code_lbl := Label.new()
+	code_lbl.add_theme_font_override("font", TITLE_FONT)
+	code_lbl.add_theme_font_size_override("font_size", 19)
+	code_lbl.add_theme_color_override("font_color", TEXT_BRIGHT)
+	row.add_child(code_lbl)
+
+	var copy_btn := Button.new()
+	copy_btn.text = "Copy"
+	copy_btn.flat = true
+	copy_btn.add_theme_font_size_override("font_size", 14)
+	copy_btn.add_theme_color_override("font_color", TEXT_DIM)
+	copy_btn.add_theme_color_override("font_hover_color", ACCENT)
+	copy_btn.add_theme_color_override("font_focus_color", ACCENT)
+	copy_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	copy_btn.pressed.connect(func():
+		DisplayServer.clipboard_set(Net.room_code)
+		copy_btn.text = "Copied"
+		get_tree().create_timer(1.2).timeout.connect(
+				func(): copy_btn.text = "Copy")
+	)
+	row.add_child(copy_btn)
+
+	var refresh := func():
+		var has_code := Net.room_code != ""
+		code_lbl.text = "ROOM  %s" % Net.room_code if has_code else "Opening room..."
+		copy_btn.visible = has_code
+	refresh.call()
+	Net.host_info_changed.connect(refresh)
+	tree_exiting.connect(func():
+		if Net.host_info_changed.is_connected(refresh):
+			Net.host_info_changed.disconnect(refresh))
+	return row
 
 
 func _volume_row(label_text: String, initial: float, on_change: Callable) -> Control:

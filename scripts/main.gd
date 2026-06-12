@@ -105,11 +105,16 @@ func _ready() -> void:
 	stars_far.texture = picks[0]
 	stars_near.texture = picks[1]
 
-	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connection_failed.connect(_leave)
 	multiplayer.server_disconnected.connect(_leave)
 	Net.setup_peer()
+
+	# Joiners announce themselves once connected; the host only spawns a
+	# ship then, so a peer that never loads the scene never gets one.
+	if Net.mode == Net.Mode.JOIN and not multiplayer.is_server():
+		multiplayer.connected_to_server.connect(
+				func(): _net_client_ready.rpc_id(1))
 
 	if Net.mode == Net.Mode.HOST or Net.mode == Net.Mode.JOIN:
 		var join_gate := Timer.new()
@@ -148,10 +153,19 @@ func _ready() -> void:
 		add_child(round_manager)
 
 
-func _on_peer_connected(id: int) -> void:
-	if multiplayer.is_server():
-		_add_player(id)
-		_sync_scores.rpc(scores)
+# The joiner's game scene is up and its spawners are listening; safe to
+# give it a ship and catch it up on the match state.
+@rpc("any_peer", "reliable")
+func _net_client_ready() -> void:
+	if not multiplayer.is_server():
+		return
+	var id := multiplayer.get_remote_sender_id()
+	if players.has_node(str(id)):
+		return
+	_add_player(id)
+	_sync_scores.rpc(scores)
+	if round_manager != null:
+		round_manager.catch_up(id)
 
 
 func _on_peer_disconnected(id: int) -> void:

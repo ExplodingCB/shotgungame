@@ -124,7 +124,7 @@ func _update_round_banner() -> void:
 
 
 # Top-left line the host shares with friends: UPnP progress, then the
-# public IP to join with (or port-forward instructions if UPnP failed).
+# room code to join with (plus whether it reaches the internet or LAN).
 # Bound method, not a lambda: Net outlives this HUD across scene
 # changes, and a lambda connection would keep firing on a freed label.
 func _build_host_info() -> void:
@@ -140,8 +140,13 @@ func _build_host_info() -> void:
 
 
 func _update_host_info() -> void:
-	_host_info_label.text = Net.host_info
-	_host_info_label.visible = Net.mode == Net.Mode.HOST and Net.host_info != ""
+	var text := Net.host_info
+	if Net.room_code != "":
+		text = "ROOM  %s" % Net.room_code
+		if Net.host_info != "":
+			text += "\n" + Net.host_info
+	_host_info_label.text = text
+	_host_info_label.visible = Net.mode == Net.Mode.HOST and text != ""
 
 
 func _exit_tree() -> void:

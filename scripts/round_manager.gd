@@ -41,7 +41,6 @@ func _ready() -> void:
 	_zone.name = "ShrinkZone"
 	main.add_child.call_deferred(_zone)
 	if multiplayer.is_server():
-		multiplayer.peer_connected.connect(_on_peer_joined)
 		if Net.mode == Net.Mode.LOCAL:
 			# Couch players already gathered in the join screen.
 			_try_start()
@@ -51,7 +50,8 @@ func _ready() -> void:
 
 # RPCs aren't replayed for late joiners, so catch the newcomer up on
 # the current phase (their zone picks up mid-shrink from fight_t).
-func _on_peer_joined(id: int) -> void:
+# Called by main when the joiner reports its scene is ready.
+func catch_up(id: int) -> void:
 	_net_phase.rpc_id(id, phase, _phase_data())
 	_net_banner.rpc_id(id, banner_text, banner_color)
 
