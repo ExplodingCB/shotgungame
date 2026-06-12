@@ -25,7 +25,7 @@ func _physics_process(delta: float) -> void:
 			_fling(p, dir, false)
 	if not multiplayer.is_server():
 		return
-	var main := get_tree().current_scene
+	var main := Arena.of(self)
 	if main == null:
 		return
 	for holder_name in ["Asteroids", "Pickups"]:

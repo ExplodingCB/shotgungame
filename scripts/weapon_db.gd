@@ -7,7 +7,7 @@ enum Weapon {
 	SHOTGUN, PISTOL, SMG, SNIPER,
 	UZI, AK47, M4, SAWED_OFF, REVOLVER,
 	DEAGLE, SCAR, P90, VECTOR, SPAS,
-	GRENADE_LAUNCHER, RPG,
+	GRENADE_LAUNCHER, RPG, HAMMER,
 }
 
 enum Rarity { COMMON, UNCOMMON, RARE, EPIC, LEGENDARY }
@@ -45,12 +45,18 @@ const SND_762X39 := preload("res://audio/gunsounds/7.62x39/MP3/762x39 Single Iso
 # (.22LR and .308 folders start with a dot, which Godot treats as
 # hidden and never imports — heavy guns reuse the 7.62 cracks instead.)
 const SND_762X54 := preload("res://audio/gunsounds/7.62x54R/MP3/762x54r Single Isolated MP3.mp3")
+# No dedicated melee audio in the pack: a deep, slow rack reads as the
+# heavy mechanical "chunk" of a hammer swing.
+const SND_SWING := preload("res://audio/gunsounds/Reloads, Cycling & More/MP3/AK Rack MP3.mp3")
 
 # Every weapon: name, rarity, art/handling offsets, ammo, and ballistics.
-# fire_mode: "pellets" (default) or "beam". Pellets with explode_radius > 0
-# detonate; bounces > 0 ricochet off rocks/walls until the fuse runs out.
-# no_drop weapons never spawn as pickups. spin_kick adds the shotgun's
-# random body-spin on fire.
+# fire_mode: "pellets" (default), "beam", or "melee" (an arc swing at
+# melee_range, melee_radius wide, that detonates on whatever it meets).
+# Pellets with explode_radius > 0 detonate; bounces > 0 ricochet off
+# rocks/walls until the fuse runs out. no_drop weapons never spawn as
+# pickups. spin_kick adds the shotgun's random body-spin on fire.
+# sprite_rot rotates art drawn in another orientation (the hammer is
+# head-up) to the +x the gun rig expects.
 const DATA := {
 	Weapon.SHOTGUN: {
 		"name": "Shotgun",
@@ -134,7 +140,7 @@ const DATA := {
 	},
 	Weapon.SNIPER: {
 		"name": "Sniper",
-		"rarity": Rarity.RARE,
+		"rarity": Rarity.LEGENDARY,
 		"texture": preload("res://assets/guns-pixelart/Sniper-rifle-3.png"),
 		"recoil": 1100.0,
 		"cooldown": 1.5,
@@ -456,7 +462,7 @@ const DATA := {
 		"muzzle_x": 76.0,
 		"muzzle_y": -8.0,
 		"max_ammo": 6,
-		"damage": 40.0,
+		"damage": 999.0,  # direct rocket hit is a guaranteed kill
 		"count": 1,
 		"spread_deg": 0.0,
 		"speed_min": 950.0,
@@ -471,6 +477,31 @@ const DATA := {
 		"pitch": 0.55,
 		"smoke": 22,
 		"smoke_scale": 1.6,
+	},
+	Weapon.HAMMER: {
+		"name": "Warhammer",
+		"rarity": Rarity.LEGENDARY,
+		"texture": preload("res://assets/melee/hammer.png"),
+		"recoil": -260.0,  # negative: the swing lunges you toward the blow
+		"cooldown": 0.85,
+		"shake": 10.0,
+		"kick": -12.0,  # the sprite drives forward instead of kicking back
+		"sprite_x": 20.0,
+		"sprite_scale": 0.9,
+		"sprite_rot": 90.0,
+		"muzzle_x": 58.0,
+		"muzzle_y": 0.0,
+		"max_ammo": -1,  # a hammer never runs dry
+		"damage": 999.0,  # one clean blow is the whole fight
+		"fire_mode": "melee",
+		"melee_range": 85.0,
+		"melee_radius": 65.0,
+		"explode_radius": 150.0,
+		"explode_damage": 45.0,
+		"sound": SND_SWING,
+		"pitch": 0.6,
+		"smoke": 0,
+		"smoke_scale": 0.0,
 	},
 }
 

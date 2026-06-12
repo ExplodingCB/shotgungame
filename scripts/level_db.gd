@@ -61,6 +61,27 @@ const LEVELS := {
 		"spawns": [Vector2(-650, -350), Vector2(650, 350), Vector2(650, -350), Vector2(-650, 350)],
 		"asteroid_density": 0.0,
 	},
+	8: {
+		"scene_path": "res://levels/wormhole.tscn",
+		"name": "Wormhole",
+		"bounds": Rect2(-1600, -900, 3200, 1800),
+		"spawns": [Vector2(-1450, 0), Vector2(1450, 0), Vector2(0, -750), Vector2(0, 750)],
+		"asteroid_density": 0.6,
+	},
+	9: {
+		"scene_path": "res://levels/gauntlet.tscn",
+		"name": "Gauntlet",
+		"bounds": Rect2(-1800, -500, 3600, 1000),
+		"spawns": [Vector2(-1650, -250), Vector2(1650, 250), Vector2(1650, -250), Vector2(-1650, 250)],
+		"asteroid_density": 0.3,
+	},
+	10: {
+		"scene_path": "res://levels/maelstrom.tscn",
+		"name": "Maelstrom",
+		"bounds": Rect2(-1600, -900, 3200, 1800),
+		"spawns": [Vector2(-1300, -720), Vector2(1300, 720), Vector2(1300, -720), Vector2(-1300, 720)],
+		"asteroid_density": 0.8,
+	},
 }
 
 

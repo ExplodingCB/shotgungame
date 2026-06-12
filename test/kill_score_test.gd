@@ -55,14 +55,15 @@ func _process(_delta: float) -> bool:
 	_check(main.scores.get(7, 0) == 2, "death did not credit the killer (%s)" % main.scores)
 	_check(float(pl.health) == float(pl.MAX_HEALTH), "victim did not respawn")
 
-	# Scoreboard UI: visible with a title plus one row per player.
+	# Scoreboard UI: visible with one color row per player. The minimal HUD
+	# redesign dropped the "KILLS" title, so it's a row each and nothing more.
 	var net: Node = root.get_node("Net")
 	net.mode = net.Mode.HOST  # display-mode only; no peer was created
 	var hud: Node = main.get_node("HUD/Hud")
 	hud._update_scoreboard()
 	_check(hud._score_box.visible, "scoreboard hidden in multiplayer mode")
-	_check(hud._score_box.get_child_count() == 2,
-			"expected title + 1 row, got %d children" % hud._score_box.get_child_count())
+	_check(hud._score_box.get_child_count() == 1,
+			"expected one row per player (no title), got %d children" % hud._score_box.get_child_count())
 	net.mode = net.Mode.SOLO
 	hud._update_scoreboard()
 	_check(not hud._score_box.visible, "scoreboard should hide in solo")

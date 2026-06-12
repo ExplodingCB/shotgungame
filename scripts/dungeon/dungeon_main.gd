@@ -167,6 +167,7 @@ var _fade: ColorRect
 
 
 func _ready() -> void:
+	add_to_group("arena")  # spawn target for fx/projectiles (see Arena.of)
 	var stream: AudioStreamMP3 = MUSIC
 	stream.loop = true
 	var music := AudioStreamPlayer.new()

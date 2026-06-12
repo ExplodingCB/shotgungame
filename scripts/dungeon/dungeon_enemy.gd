@@ -298,7 +298,7 @@ func _warden_attack(to_target: Vector2) -> void:
 			_fan(to_target.normalized(), 7, 0.7, bullet_speed * 1.45, 8.0,
 					Color(0.95, 0.5, 1.0))
 		2:  # call in swarmlings
-			var main := get_tree().current_scene
+			var main := Arena.of(self)
 			if main != null and main.has_method("spawn_enemy") \
 					and int(main.enemies_alive) < 8:
 				for i in 3:
@@ -397,7 +397,7 @@ func _fire_beam(dir: Vector2) -> void:
 	beam.width = 4.0
 	beam.default_color = Color(0.8, 0.7, 1.0)
 	beam.position = from
-	get_tree().current_scene.add_child(beam)
+	Arena.of(self).add_child(beam)
 	beam.reset_physics_interpolation()
 	var tween := beam.create_tween()
 	tween.tween_property(beam, "modulate:a", 0.0, 0.25)
@@ -406,7 +406,7 @@ func _fire_beam(dir: Vector2) -> void:
 
 
 func _lay_mine() -> void:
-	var main := get_tree().current_scene
+	var main := Arena.of(self)
 	var holder := main.get_node_or_null("Props") if main != null else null
 	if holder == null:
 		return
@@ -436,7 +436,7 @@ func _lob(dir: Vector2) -> void:
 	p.explode_damage = 20.0
 	p.exclude = excl
 	p.position = global_position + dir * (float(DATA[kind]["radius"]) + 14.0)
-	get_tree().current_scene.add_child(p)
+	Arena.of(self).add_child(p)
 	p.reset_physics_interpolation()
 
 
@@ -459,7 +459,7 @@ func _shoot(dir: Vector2, speed: float, dmg: float, life: float, color: Color) -
 	p.modulate = color
 	p.exclude = excl
 	p.position = global_position + dir * (float(DATA[kind]["radius"]) + 14.0)
-	get_tree().current_scene.add_child(p)
+	Arena.of(self).add_child(p)
 	p.reset_physics_interpolation()
 
 
@@ -491,7 +491,7 @@ func take_damage(amount: float, dir: Vector2, _at: Vector2, attacker_id := 0) ->
 		var fx := BREAK_EFFECT.instantiate()
 		fx.scale = Vector2.ONE * (1.6 if kind == Kind.WARDEN else 0.7)
 		fx.position = global_position
-		get_tree().current_scene.add_child(fx)
+		Arena.of(self).add_child(fx)
 		fx.reset_physics_interpolation()
 		if kind == Kind.KAMIKAZE:
 			# Dies as a bomb whether it reached you or got shot down;

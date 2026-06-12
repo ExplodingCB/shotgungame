@@ -51,7 +51,7 @@ func take_damage(amount: float, dir: Vector2, at: Vector2, _attacker_id := 0) ->
 
 
 func _break_open() -> void:
-	var main := get_tree().current_scene
+	var main := Arena.of(self)
 	var fx := BREAK_EFFECT.instantiate()
 	fx.scale = Vector2.ONE * 1.1
 	fx.position = global_position

@@ -6,6 +6,7 @@ const WEAPON_DATA := WeaponDB.DATA
 
 const PROJECTILE_SCENE := preload("res://scenes/projectile.tscn")
 const SMOKE_PUFF_SCENE := preload("res://scenes/smoke_puff.tscn")
+const GRENADE_TEX := preload("res://assets/grenades/white-grenade.png")
 
 const SND_DRY := preload("res://audio/gunsounds/Pistol/MP3/9mm Pistol Dry Fire.mp3")
 const SND_SWITCH := preload("res://audio/gunsounds/Pistol/MP3/9mm Pistol Slide Release.mp3")
@@ -16,10 +17,19 @@ const COLORS := [
 	Color(0.35, 0.8, 1.0),   # P2 cyan
 	Color(0.55, 1.0, 0.5),   # P3 green
 	Color(1.0, 0.5, 0.85),   # P4 pink
+	Color(1.0, 0.88, 0.25),  # yellow
+	Color(0.72, 0.45, 1.0),  # violet
+	Color(1.0, 0.32, 0.28),  # crimson
+	Color(0.93, 0.95, 1.0),  # white
 ]
 
 const MAX_HEALTH := 100.0
 const HIT_KNOCKBACK := 3.0
+
+# Nano-Medkit overheal: a pickup tops you past full, then the bonus
+# bleeds back down to the cap.
+const OVERHEAL_MAX := 150.0
+const OVERHEAL_DECAY := 3.0  # hp/s
 
 const MAX_SPEED := 900.0
 const DRIFT_FRICTION := 30.0
@@ -38,9 +48,20 @@ const BEAM_DAMAGE := 200.0
 const START_SHELLS := 8
 
 # Weapons are grabbed with E inside this radius and thrown with Q;
-# thrown guns keep whatever ammo they had.
+# thrown guns keep whatever ammo they had. Hurling one shoves you the
+# other way, so a throw doubles as an escape thruster.
 const GRAB_RADIUS := 220.0
 const THROW_SPEED := 420.0
+const THROW_RECOIL := 360.0
+
+# Frag grenades: a consumable lobbed with G (pad A) without leaving
+# your gun. Short fuse, a couple of bounces, then a hefty blast.
+const GRENADE_CAP := 3
+const GRENADE_SPEED := 700.0
+const GRENADE_FUSE := 1.1
+const GRENADE_RADIUS := 160.0
+const GRENADE_DAMAGE := 55.0
+const GRENADE_COOLDOWN := 0.5
 
 # Body contact above this speed hurts the ship you hit — sawed-off and
 # rocket recoil double as a battering ram.
@@ -50,7 +71,14 @@ const RAM_COOLDOWN := 0.5
 var weapon: int = Weapon.SHOTGUN
 var primary: int = Weapon.SHOTGUN  # the one big-gun slot; -1 = empty
 var ammo := {}
-var color_idx := 0
+var grenades := 0  # consumable count, found as packs in versus arenas
+# Paint job. Menu picks land after spawn and ride the synchronizer, so
+# the setter keeps the hull tint current on every peer.
+var color_idx := 0:
+	set(v):
+		color_idx = v
+		if body_sprite != null:
+			body_sprite.modulate = COLORS[color_idx % COLORS.size()]
 var health := MAX_HEALTH
 var max_health := MAX_HEALTH
 
@@ -69,7 +97,7 @@ var primary_b: int = -1
 # Which physical device steers this body (see PlayerInput). Couch mode
 # spawns several locally-controlled players, each bound to one device.
 var device := -2
-var slot := 0  # stable couch identity; mirrors color_idx
+var slot := 0  # stable couch identity; also the default paint pick
 var controls: PlayerInput = PlayerInput.new(-2)
 
 # Round play: eliminated players sit out until the next countdown, and
@@ -88,6 +116,7 @@ var input_locked := false
 @onready var fx_audio: AudioStreamPlayer2D = $FxAudio
 
 var _cooldown := 0.0
+var _grenade_cd := 0.0
 var _shake := 0.0
 var _last_health := MAX_HEALTH
 var _ram_cd := 0.0
@@ -96,6 +125,7 @@ var _spin := 0.0
 var _shown_weapon := -1
 var _suppress_switch_snd := false
 var _muzzle_y := -5.0
+var _swing_tween: Tween = null
 
 
 func _init() -> void:
@@ -124,6 +154,11 @@ func _ready() -> void:
 		lh.level_loaded.connect(_apply_camera_limits)
 		_apply_camera_limits()
 	_apply_weapon()
+	# A menu-picked paint job: ask the server to hand it over. The server
+	# arbitrates clashes, so two ships never fly the same color.
+	if Net.mode != Net.Mode.LOCAL and Net.preferred_color >= 0 \
+			and is_locally_controlled():
+		_net_request_color.rpc_id(1, Net.preferred_color)
 
 
 # Pin the follow camera inside the active level so small arenas don't
@@ -161,6 +196,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_try_pickup()
 	elif controls.is_throw(event):
 		throw_weapon(controls.aim(self))
+	elif controls.is_grenade(event):
+		throw_grenade(controls.aim(self))
 	elif device == -1 and event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
 			KEY_1:
@@ -198,10 +235,13 @@ func _physics_process(delta: float) -> void:
 func _authority_update(delta: float) -> void:
 	if _dead:
 		return
+	if health > max_health:
+		health = maxf(health - OVERHEAL_DECAY * delta, max_health)
 	var aim := controls.aim(self)
 	gun_pivot.rotation = aim.angle()
 
 	_cooldown = maxf(_cooldown - delta, 0.0)
+	_grenade_cd = maxf(_grenade_cd - delta, 0.0)
 	if _cooldown == 0.0 and controls.fire_held() and not Net.ui_open and not input_locked:
 		_fire(aim)
 
@@ -253,7 +293,7 @@ func _add_shake(amount: float) -> void:
 	if camera.enabled:
 		_shake = maxf(_shake, amount)
 		return
-	var cam: Node = get_tree().current_scene.get_node_or_null("SharedCamera")
+	var cam: Node = Arena.of(self).get_node_or_null("SharedCamera")
 	if cam != null:
 		cam.add_shake(amount)
 
@@ -297,6 +337,8 @@ func throw_weapon(aim: Vector2) -> void:
 	if aim == Vector2.ZERO:
 		aim = Vector2.RIGHT
 	_net_throw.rpc_id(1, kind, int(ammo[kind]), aim)
+	velocity -= aim.normalized() * THROW_RECOIL
+	_add_shake(4.0)
 	ammo[kind] = 0
 	if from_b:
 		primary_b = -1
@@ -305,6 +347,73 @@ func throw_weapon(aim: Vector2) -> void:
 	if weapon != Weapon.PISTOL:
 		_switch_weapon(Weapon.PISTOL)
 	_play_fx(SND_SWITCH)
+
+
+# Lobs a frag without switching off the wielded gun. Same authority
+# split as gunfire: every peer spawns the visual copy, only the
+# thrower's machine spawns the one that deals damage.
+func throw_grenade(aim: Vector2) -> void:
+	if _grenade_cd > 0.0:
+		return
+	if grenades <= 0:
+		_grenade_cd = GRENADE_COOLDOWN
+		_play_fx(SND_DRY)
+		return
+	grenades -= 1
+	_grenade_cd = GRENADE_COOLDOWN
+	if aim == Vector2.ZERO:
+		aim = Vector2.RIGHT
+	_grenade_fx.rpc(aim.normalized())
+
+
+@rpc("authority", "call_local", "reliable")
+func _grenade_fx(aim: Vector2) -> void:
+	var p := PROJECTILE_SCENE.instantiate()
+	p.velocity = aim * GRENADE_SPEED + velocity * 0.5
+	p.damage = 20.0  # a direct stick detonates on the target
+	p.lifetime = GRENADE_FUSE
+	p.damping = 300.0
+	p.scale = Vector2.ONE * 2.2
+	# A real frag sprite instead of the tracer dot, with a white glow
+	# rim so the live grenade reads mid-flight.
+	var spr: Sprite2D = p.get_node("Sprite2D")
+	spr.texture = GRENADE_TEX
+	spr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	spr.scale = Vector2.ONE
+	var halo := Sprite2D.new()
+	halo.texture = SpriteOutline.silhouette(GRENADE_TEX)
+	halo.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	halo.scale = Vector2.ONE * 1.45
+	halo.modulate = Color(1.0, 1.0, 1.0, 0.5)
+	halo.z_index = -1
+	p.add_child(halo)
+	p.explode_radius = GRENADE_RADIUS * explode_mult
+	p.explode_damage = GRENADE_DAMAGE * damage_mult * explode_mult
+	p.bounces = 2
+	var excl: Array[RID] = [get_rid()]
+	p.exclude = excl
+	p.deals_damage = is_multiplayer_authority()
+	p.shooter_id = fighter_key()
+	p.position = global_position + aim * 44.0
+	Arena.of(self).add_child(p)
+	p.reset_physics_interpolation()
+	_play_fx(SND_SWITCH)
+
+
+# Grenade-pack touch: routed to the owning peer like the medkit.
+func give_grenades(count: int) -> void:
+	if is_multiplayer_authority():
+		_apply_grenades(count)
+	else:
+		_apply_grenades.rpc_id(get_multiplayer_authority(), count)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _apply_grenades(count: int) -> void:
+	if not is_multiplayer_authority() or multiplayer.get_remote_sender_id() > 1:
+		return
+	grenades = mini(grenades + count, GRENADE_CAP)
+	_play_fx(SND_RACK)
 
 
 func _try_pickup() -> void:
@@ -339,7 +448,7 @@ func _net_request_pickup(pickup_name: String, drop_kind: int, drop_ammo: int) ->
 	if not multiplayer.is_server() \
 			or multiplayer.get_remote_sender_id() != get_multiplayer_authority():
 		return
-	var holder := get_tree().current_scene.get_node_or_null("Pickups")
+	var holder := Arena.of(self).get_node_or_null("Pickups")
 	if holder == null:
 		return
 	var pickup := holder.get_node_or_null(NodePath(pickup_name))
@@ -353,7 +462,7 @@ func _net_request_pickup(pickup_name: String, drop_kind: int, drop_ammo: int) ->
 	var got_ammo: int = pickup.ammo
 	pickup.queue_free()
 	if drop_kind >= 0 and drop_kind != Weapon.PISTOL and WEAPON_DATA.has(drop_kind):
-		get_tree().current_scene.spawn_weapon_pickup(
+		Arena.of(self).spawn_weapon_pickup(
 				drop_kind, drop_ammo, global_position, Vector2.ZERO, randf_range(-1.2, 1.2))
 	_net_receive_weapon.rpc_id(get_multiplayer_authority(), got_kind, got_ammo)
 
@@ -363,6 +472,31 @@ func _net_receive_weapon(id: int, amount: int) -> void:
 	if not is_multiplayer_authority() or multiplayer.get_remote_sender_id() > 1:
 		return
 	give_weapon(id, amount)
+
+
+# Paint handshake: the owner asks the server for its saved color, and
+# the server hands it over unless another fighter already wears it. The
+# grant lands on the owning peer, whose synchronizer fans the new
+# color_idx out to everyone (late joiners catch it via spawn state).
+@rpc("any_peer", "call_local", "reliable")
+func _net_request_color(wanted: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if sender > 1 and sender != get_multiplayer_authority():
+		return
+	wanted = clampi(wanted, 0, COLORS.size() - 1)
+	for p in get_tree().get_nodes_in_group("player"):
+		if p != self and int(p.color_idx) == wanted:
+			return  # taken: keep the color assigned at spawn
+	_net_grant_color.rpc_id(get_multiplayer_authority(), wanted)
+
+
+@rpc("any_peer", "call_local", "reliable")
+func _net_grant_color(idx: int) -> void:
+	if not is_multiplayer_authority() or multiplayer.get_remote_sender_id() > 1:
+		return
+	color_idx = idx
 
 
 @rpc("any_peer", "call_local", "reliable")
@@ -375,12 +509,38 @@ func _net_throw(kind: int, amount: int, aim: Vector2) -> void:
 	var dir := aim.normalized()
 	if dir == Vector2.ZERO:
 		dir = Vector2.RIGHT
-	get_tree().current_scene.spawn_weapon_pickup(
+	Arena.of(self).spawn_weapon_pickup(
 			kind, amount,
 			global_position + dir * 50.0,
 			dir * THROW_SPEED + velocity * 0.5,
 			randf_range(-2.0, 2.0),
 			fighter_key())
+
+
+# Nano-Medkit touch: routes to the owning peer like damage does. The
+# server simulates medkits, so only it (or a direct local call) counts.
+func give_overheal() -> void:
+	if is_multiplayer_authority():
+		_apply_overheal()
+	else:
+		_apply_overheal.rpc_id(get_multiplayer_authority())
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _apply_overheal() -> void:
+	if not is_multiplayer_authority() or multiplayer.get_remote_sender_id() > 1:
+		return
+	health = maxf(health, OVERHEAL_MAX)
+	_flash_heal()
+	_play_fx(SND_RACK)
+
+
+# Gold surge on the heal, settling back to the player's color.
+func _flash_heal() -> void:
+	body_sprite.modulate = Color(1.0, 0.85, 0.3)
+	var tween := create_tween()
+	tween.tween_property(body_sprite, "modulate",
+			COLORS[color_idx % COLORS.size()], 0.35)
 
 
 func take_damage(amount: float, dir: Vector2, _at: Vector2, attacker_id := 0) -> void:
@@ -409,7 +569,7 @@ func _apply_damage(amount: float, dir: Vector2, attacker_id := 0) -> void:
 		# keeps score (and ignores suicides and enemy-ship kills).
 		# Couch mode is single-process, so it reports directly with the
 		# victim's slot key instead of leaning on the RPC sender id.
-		var main := get_tree().current_scene
+		var main := Arena.of(self)
 		# Decide the fate before reporting: the report may end the round.
 		var out_for_round: bool = main != null \
 				and main.has_method("round_fight_active") and main.round_fight_active()
@@ -420,6 +580,8 @@ func _apply_damage(amount: float, dir: Vector2, attacker_id := 0) -> void:
 			main._net_report_kill.rpc_id(1, attacker_id)
 		if main != null and main.has_method("_net_player_death_fx"):
 			main._net_player_death_fx.rpc(global_position, color_idx)
+		if main != null and main.has_method("_net_death_msg"):
+			main._net_death_msg.rpc(slot, color_idx, attacker_id)
 		Juice.hitstop(150)
 		Juice.rumble(device, 1.0, 1.0, 0.45)
 		if out_for_round:
@@ -460,6 +622,16 @@ func _apply_dead_state() -> void:
 	visible = not _dead
 	collision_layer = 0 if _dead else 2
 	collision_mask = 0 if _dead else 3
+	# Online play: an eliminated player's view hops to the spectator
+	# camera until revive() hands this one back.
+	if is_locally_controlled() \
+			and (Net.mode == Net.Mode.HOST or Net.mode == Net.Mode.JOIN):
+		var main := Arena.of(self)
+		if main != null and main.has_method("set_spectating"):
+			main.set_spectating(_dead, global_position)
+		camera.enabled = not _dead
+		if not _dead:
+			camera.make_current()
 
 
 # Back to the starting kit between rounds: shotgun shells + the pistol.
@@ -468,6 +640,7 @@ func reset_loadout() -> void:
 		ammo[id] = 0
 	ammo[Weapon.SHOTGUN] = START_SHELLS
 	ammo[Weapon.PISTOL] = -1
+	grenades = 0
 	primary = Weapon.SHOTGUN
 	primary_b = -1
 	weapon = Weapon.SHOTGUN
@@ -503,6 +676,9 @@ func _apply_weapon() -> void:
 	gun_sprite.texture = data["texture"]
 	gun_sprite.position.x = data["sprite_x"]
 	gun_sprite.scale = Vector2.ONE * float(data["sprite_scale"])
+	if _swing_tween != null and _swing_tween.is_valid():
+		_swing_tween.kill()
+	gun_sprite.rotation = deg_to_rad(float(data.get("sprite_rot", 0.0)))
 	muzzle.position.x = data["muzzle_x"]
 	_muzzle_y = data["muzzle_y"]
 	_gun_rest_x = data["sprite_x"]
@@ -556,9 +732,12 @@ func _fire_fx(aim: Vector2, w: int) -> void:
 	match data.get("fire_mode", "pellets"):
 		"beam":
 			_fire_beam(aim, lethal)
+		"melee":
+			_swing_melee(aim, lethal, data)
 		_:
 			_spawn_projectiles(aim, data, lethal)
-	_puff_smoke(int(data["smoke"]), float(data["smoke_scale"]), aim)
+	if int(data["smoke"]) > 0:
+		_puff_smoke(int(data["smoke"]), float(data["smoke_scale"]), aim)
 	gun_sprite.position.x = _gun_rest_x - float(data["kick"])
 	var snd: AudioStream = data["sound"]
 	if shot_audio.stream != snd:
@@ -592,7 +771,7 @@ func _spawn_projectiles(aim: Vector2, data: Dictionary, lethal: bool) -> void:
 		p.deals_damage = lethal
 		p.shooter_id = fighter_key()
 		p.position = muzzle.global_position
-		get_tree().current_scene.add_child(p)
+		Arena.of(self).add_child(p)
 		p.reset_physics_interpolation()
 
 
@@ -602,8 +781,47 @@ func _puff_smoke(amount: int, size: float, aim: Vector2) -> void:
 	puff.rotation = aim.angle()
 	puff.scale = Vector2.ONE * size
 	puff.position = muzzle.global_position
-	get_tree().current_scene.add_child(puff)
+	Arena.of(self).add_child(puff)
 	puff.reset_physics_interpolation()
+
+
+# The Warhammer arc: every peer animates the sweep and checks the same
+# arc (positions are synced, so they agree within a frame), but only
+# the wielder's machine deals the one-shot and the detonation — the
+# same authority split as gunfire. Direct victims and the wielder are
+# exempt from the blast damage; everyone still rides the shockwave.
+func _swing_melee(aim: Vector2, lethal: bool, data: Dictionary) -> void:
+	var base := deg_to_rad(float(data.get("sprite_rot", 0.0)))
+	if _swing_tween != null and _swing_tween.is_valid():
+		_swing_tween.kill()
+	gun_sprite.rotation = base - 1.9
+	_swing_tween = gun_sprite.create_tween()
+	_swing_tween.tween_property(gun_sprite, "rotation", base + 0.7, 0.09)
+	_swing_tween.tween_property(gun_sprite, "rotation", base, 0.3)
+
+	var center := global_position + aim * float(data["melee_range"])
+	var shape := CircleShape2D.new()
+	shape.radius = float(data["melee_radius"])
+	var q := PhysicsShapeQueryParameters2D.new()
+	q.shape = shape
+	q.transform = Transform2D(0.0, center)
+	q.collision_mask = 3  # ships and rocks both crunch
+	var excl: Array[RID] = [get_rid()]
+	q.exclude = excl
+	var struck: Array = []
+	for h in get_world_2d().direct_space_state.intersect_shape(q, 8):
+		var c: Object = h["collider"]
+		if c is Node2D and not c is StaticBody2D and c.has_method("take_damage"):
+			struck.append(c)
+	if struck.is_empty():
+		return
+	if lethal:
+		for c in struck:
+			c.take_damage(float(data["damage"]) * damage_mult, aim,
+					(c as Node2D).global_position, fighter_key())
+	Explosions.blast(self, center, float(data["explode_radius"]) * explode_mult,
+			float(data["explode_damage"]) * damage_mult * explode_mult,
+			fighter_key(), lethal, struck + [self])
 
 
 func _fire_beam(aim: Vector2, lethal: bool) -> void:
@@ -627,7 +845,7 @@ func _fire_beam(aim: Vector2, lethal: bool) -> void:
 	beam.begin_cap_mode = Line2D.LINE_CAP_ROUND
 	beam.end_cap_mode = Line2D.LINE_CAP_ROUND
 	beam.position = from
-	get_tree().current_scene.add_child(beam)
+	Arena.of(self).add_child(beam)
 	beam.reset_physics_interpolation()
 	var tween := beam.create_tween()
 	tween.tween_property(beam, "modulate:a", 0.0, 0.4)
